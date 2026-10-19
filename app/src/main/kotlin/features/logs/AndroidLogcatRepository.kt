@@ -3,6 +3,7 @@
 
 package features.logs
 
+import engine.mihomo.tailscale.redactTailnetSecrets
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -63,7 +64,7 @@ internal object AndroidLogcatRepository : InMemoryCoreLogRepository() {
     }
 
     private fun appendPersistedLine(timestampMillis: Long?, level: String, message: String) {
-        fileStore.appendLine(encodeLogLine(timestampMillis, level, message))
+        fileStore.appendLine(encodeLogLine(timestampMillis, level, redactTailnetSecrets(message)))
     }
 
     private fun readPersistedEntries(): List<CoreLogEntry> {

@@ -11,6 +11,12 @@ import engine.mihomo.binding.model.TunnelState
 import engine.mihomo.DefaultMihomoDelayTestUrl
 import engine.mihomo.DefaultMihomoDelayTimeoutMillis
 import engine.mihomo.MihomoAutoSwitchOptions
+import engine.mihomo.tailscale.MihomoTailscaleSecretRequiredException
+import engine.mihomo.tailscale.MihomoTailscaleUnsupportedException
+import engine.mihomo.tailscale.TailscaleBackendState
+import engine.mihomo.tailscale.parseTailscaleCoreStatuses
+import engine.mihomo.tailscale.parseTailscaleLoginUrl
+import engine.mihomo.tailscale.redactTailnetSecrets
 import engine.mihomo.MihomoControlConfig
 import engine.vpn.AndroidMihomoRuntime
 import kotlinx.coroutines.CancellationException
@@ -324,6 +330,49 @@ internal class MihomoControlClient(
         }
         autoSwitchRequest(config, method = "PATCH", body = body)
     }
+
+    fun getTailscaleStatuses(config: MihomoControlConfig, useBridge: Boolean): Map<String, TailscaleBackendState> {
+        val response = if (useBridge) Clash.queryTailscaleStatus() else tailscaleRequest(config, TailscalePath)
+        return parseTailscaleCoreStatuses(response)
+    }
+
+    fun startTailscaleLogin(config: MihomoControlConfig, outboundName: String, useBridge: Boolean) {
+        if (useBridge) {
+            Clash.startTailscaleLogin(outboundName)
+            return
+        }
+        tailscaleRequest(config, "$TailscalePath/login?name=${outboundName.urlEncode()}", method = "POST")
+    }
+
+    /** Pending login URL; callers keep it in memory and never log or persist it. */
+    fun tailscaleLoginUrl(config: MihomoControlConfig, outboundName: String, useBridge: Boolean): String {
+        if (useBridge) return Clash.queryTailscaleLoginUrl(outboundName)
+        return parseTailscaleLoginUrl(
+            tailscaleRequest(config, "$TailscalePath/login-url?name=${outboundName.urlEncode()}"),
+        )
+    }
+
+    fun logoutTailscale(config: MihomoControlConfig, outboundName: String, useBridge: Boolean) {
+        if (useBridge) {
+            Clash.logoutTailscale(outboundName)
+            return
+        }
+        tailscaleRequest(config, "$TailscalePath/logout?name=${outboundName.urlEncode()}", method = "POST")
+    }
+
+    private fun tailscaleRequest(config: MihomoControlConfig, path: String, method: String = "GET"): String =
+        try {
+            request(config, path, method = method)
+        } catch (error: MihomoApiException) {
+            when {
+                // Only the list route proves the API is missing; a per-outbound 404 is an unknown name.
+                error.status == HttpURLConnection.HTTP_NOT_FOUND && path == TailscalePath ->
+                    throw MihomoTailscaleUnsupportedException()
+                error.status == HttpURLConnection.HTTP_FORBIDDEN && path.startsWith("$TailscalePath/login-url") ->
+                    throw MihomoTailscaleSecretRequiredException()
+                else -> throw IllegalStateException(redactTailnetSecrets(error.message.orEmpty()))
+            }
+        }
 
     // A custom upstream core uploaded for ROOT has no AndroidLibClashLite route.
     private fun autoSwitchRequest(config: MihomoControlConfig, method: String = "GET", body: String? = null): String =
@@ -672,6 +721,7 @@ internal class MihomoControlClient(
             put("oslimit", 0L)
         }
         const val AutoSwitchPath = "/asterisk/auto-switch"
+        const val TailscalePath = "/asterisk/tailscale"
         const val DefaultConnectTimeoutMillis = 2_500
         const val DefaultReadTimeoutMillis = 8_000
         const val DelayResponseGraceMillis = 1_000

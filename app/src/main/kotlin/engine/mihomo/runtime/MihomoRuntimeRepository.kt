@@ -12,6 +12,9 @@ import engine.mihomo.hasUsableMihomoProfile
 import engine.mihomo.mihomoLogLevelName
 import engine.mihomo.mihomoControlConfig
 import engine.mihomo.selectedMihomoProfileOrNull
+import engine.mihomo.tailscale.MihomoTailscaleUnsupportedException
+import engine.mihomo.tailscale.TailscaleStatusQuery
+import engine.mihomo.tailscale.TailscaleStatusUnavailableReason
 import engine.mihomo.toMihomoAutoSwitchOptions
 import engine.mihomo.MihomoControlConfig
 import engine.mihomo.raw.loadSelectedRawConfig
@@ -551,6 +554,47 @@ internal class MihomoRuntimeRepository(
                 client.patchAutoSwitch(control, desired, useBridge)
             }
         }
+    }
+
+    /** Typed Tailscale state of the running core; never starts tsnet and never returns a login URL. */
+    suspend fun tailscaleStatuses(appState: AppState): TailscaleStatusQuery {
+        if (!appState.proxyRunning) return TailscaleStatusQuery.Unavailable(TailscaleStatusUnavailableReason.ProxyNotRunning)
+        return runMihomoRuntimeCatching {
+            val control = resolveMihomoControlConfig(appState)
+            val useBridge = resolveInteractiveBackend(appState, control).useBridge()
+            withContext(Dispatchers.IO) { client.getTailscaleStatuses(control, useBridge) }
+        }.fold(
+            onSuccess = { TailscaleStatusQuery.Available(it) },
+            onFailure = { error ->
+                TailscaleStatusQuery.Unavailable(
+                    if (error is MihomoTailscaleUnsupportedException) {
+                        TailscaleStatusUnavailableReason.CoreApiMissing
+                    } else {
+                        TailscaleStatusUnavailableReason.QueryFailed
+                    },
+                )
+            },
+        )
+    }
+
+    suspend fun startTailscaleLogin(appState: AppState, outboundName: String): Result<Unit> =
+        tailscaleAction(appState) { control, useBridge -> client.startTailscaleLogin(control, outboundName, useBridge) }
+
+    /** Pending login URL. Keep it in memory only; never log, persist or put it in a notification. */
+    suspend fun tailscaleLoginUrl(appState: AppState, outboundName: String): Result<String> =
+        tailscaleAction(appState) { control, useBridge -> client.tailscaleLoginUrl(control, outboundName, useBridge) }
+
+    suspend fun logoutTailscale(appState: AppState, outboundName: String): Result<Unit> =
+        tailscaleAction(appState) { control, useBridge -> client.logoutTailscale(control, outboundName, useBridge) }
+
+    private suspend fun <T> tailscaleAction(
+        appState: AppState,
+        action: (MihomoControlConfig, Boolean) -> T,
+    ): Result<T> = runMihomoRuntimeCatching {
+        require(appState.proxyRunning) { "Tailscale outbounds run only while the proxy service is running" }
+        val control = resolveMihomoControlConfig(appState)
+        val useBridge = resolveInteractiveBackend(appState, control).useBridge()
+        withContext(Dispatchers.IO) { action(control, useBridge) }
     }
 
     suspend fun refreshMemoryNow(appState: AppState): Long? {

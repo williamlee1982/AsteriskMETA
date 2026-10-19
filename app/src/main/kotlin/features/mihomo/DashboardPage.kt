@@ -78,6 +78,8 @@ import engine.mihomo.raw.MihomoRawConfigParser
 import engine.mihomo.runtime.MihomoTrafficSample
 import engine.mihomo.runtime.MihomoTrafficState
 import engine.mihomo.selectedMihomoProfileOrNull
+import engine.mihomo.tailscale.MihomoTailscaleOutbound
+import engine.mihomo.tailscale.parseMihomoTailscaleOutbounds
 import features.home.HomeControllerState
 import features.home.HomeMonitoringOverviewState
 import features.home.HomeNetworkActivityState
@@ -101,6 +103,7 @@ import features.mihomo.provider.MihomoProviderUsageKind
 import features.mihomo.provider.MihomoProviderUsageLoadState
 import features.mihomo.provider.resolveSharedMihomoProviderUsageState
 import features.mihomo.provider.selectedMihomoProviderUsageLoadKeyOrNull
+import features.mihomo.tailscale.TailnetStatusSection
 import features.monitoring.MonitoringIntent
 import features.monitoring.ObserveMonitoring
 import kotlinx.coroutines.Dispatchers
@@ -212,6 +215,23 @@ fun MihomoDashboardPage(
             null
         }
     }
+    val tailscaleOutbounds by produceState<List<MihomoTailscaleOutbound>>(
+        initialValue = emptyList(),
+        key1 = selectedProfile?.id,
+        key2 = selectedProfile?.contentSha256,
+    ) {
+        value = if (selectedProfile?.hasContent == true) {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    parseMihomoTailscaleOutbounds(
+                        services.mihomoProfileContentStore.readBytes(selectedProfile).toString(Charsets.UTF_8),
+                    )
+                }.getOrDefault(emptyList())
+            }
+        } else {
+            emptyList()
+        }
+    }
     val controllerState = remember(appState, controllerRuntimeState, rawMihomoMode) {
         buildHomeControllerState(appState, controllerRuntimeState, rawMihomoMode)
     }
@@ -293,6 +313,15 @@ fun MihomoDashboardPage(
                     onOpenConfiguration = { mainDestinationState?.select(MainDestination.Configurations) },
                     onOpenNode = { mainDestinationState?.select(MainDestination.Proxies) },
                 )
+            }
+            if (tailscaleOutbounds.isNotEmpty()) {
+                item("tailnet") {
+                    TailnetStatusSection(
+                        appState = appState,
+                        outbounds = tailscaleOutbounds,
+                        modifier = HomeContentModifier,
+                    )
+                }
             }
             item("network_activity") {
                 NetworkActivityCard(networkActivityState)

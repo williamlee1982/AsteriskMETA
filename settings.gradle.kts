@@ -38,7 +38,9 @@ dependencyResolutionManagement {
             forRepository {
                 ivy {
                     name = "AndroidLibClashLiteGitHubRelease"
-                    url = uri("https://github.com/Asterisk4Magisk/AndroidLibClashLite/releases/download")
+                    // Release repository of the core AAR; override with -Pasterisk.libclash.repository=owner/name.
+                    val libclashRepository = providers.gradleProperty("asterisk.libclash.repository").get()
+                    url = uri("https://github.com/$libclashRepository/releases/download")
                     patternLayout { artifact("[revision]/[artifact].[ext]") }
                     metadataSources { artifact() }
                 }

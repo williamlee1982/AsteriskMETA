@@ -6,6 +6,7 @@ import android.os.Build
 import androidx.core.net.toUri
 import go.Seq
 import engine.mihomo.binding.model.*
+import engine.mihomo.mihomoHomeDirectory
 import engine.mihomo.binding.util.parseInetSocketAddress
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
@@ -27,7 +28,7 @@ internal object MihomoBridge {
     private lateinit var application: Application
     private val initialized by lazy {
         Seq.setContext(application)
-        val home = application.filesDir.resolve("clash").apply { mkdirs() }
+        val home = mihomoHomeDirectory(application.filesDir).apply { mkdirs() }
         Libclash.init(home.absolutePath, app.ProjectInfo.VERSION_NAME, Build.VERSION.SDK_INT, object : ContentResolver {
             override fun openContent(uri: String): Int {
                 val parsed = uri.toUri()
@@ -246,6 +247,27 @@ internal object MihomoBridge {
     fun patchAutoSwitch(settingsJson: String) {
         ensureInitialized()
         Libclash.patchAutoSwitch(settingsJson)
+    }
+
+    fun queryTailscaleStatus(): String {
+        ensureInitialized()
+        return Libclash.queryTailscaleStatus()
+    }
+
+    fun startTailscaleLogin(outboundName: String) {
+        ensureInitialized()
+        Libclash.startTailscaleLogin(outboundName)
+    }
+
+    /** Pending login URL; keep it in memory only. */
+    fun queryTailscaleLoginUrl(outboundName: String): String {
+        ensureInitialized()
+        return Libclash.queryTailscaleLoginURL(outboundName)
+    }
+
+    fun logoutTailscale(outboundName: String) {
+        ensureInitialized()
+        Libclash.logoutTailscale(outboundName)
     }
 
     suspend fun fetchAndValid(

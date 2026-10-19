@@ -3,6 +3,7 @@
 
 package ui.feedback
 
+import engine.mihomo.tailscale.redactTailnetSecrets
 import android.content.Context
 import android.widget.Toast
 import app.R
@@ -14,7 +15,7 @@ class AndroidToastTipNotifier(context: Context) {
 
     suspend fun show(message: String) {
         withContext(Dispatchers.Main.immediate) {
-            Toast.makeText(appContext, message, Toast.LENGTH_SHORT).show()
+            Toast.makeText(appContext, redactTailnetSecrets(message), Toast.LENGTH_SHORT).show()
         }
     }
 
