@@ -27,14 +27,23 @@ files into notes, issues or screenshots.
 
 ## A. Login and identity
 
-- [ ] A1 First start: the new identity requests login; complete it in the browser. The login URL is
-      not saved anywhere outside the core's log ring and is not shared.
+- [ ] A1 First start: the card shows **Not started** or **Login required**. Tap **Log in**: the
+      browser opens the control server's login page; complete it. The card turns **Connected** with
+      the Tailnet IPs and MagicDNS name within a few seconds.
+- [ ] A1b The login URL does not appear in the app log, logcat (`adb logcat | grep '/a/'`), exported
+      logs, toasts or the core log file.
+- [ ] A1c ROOT mode with an empty controller secret: **Log in** reports that a secret is required;
+      with a secret set it opens the browser.
 - [ ] A2 Admin console shows a new device `<ts-hostname>`, distinct from any standalone Tailscale
       device on the same phone.
 - [ ] A3 Stop and start the service: no new login, same device and Tailnet IP (identity persisted).
 - [ ] A4 Force-stop the app and start again: same device, no duplicate registration.
 - [ ] A5 Two outbounds with distinct `state-dir`s produce two devices; removing `state-dir` from both
       shows "shared" warnings on the card.
+- [ ] A5b **Log out / reset** asks for confirmation; afterwards the card shows **Login required** and
+      the admin console shows the node logged out. Logging in again works.
+- [ ] A5c An APK built against an upstream core (no state API) shows "no Tailscale state API" and no
+      buttons.
 - [ ] A6 (ROOT) `ls -ld <filesDir>/clash/<state-dir>` is inside the app data directory and not
       world-readable. Do not change permissions.
 
@@ -45,7 +54,11 @@ files into notes, issues or screenshots.
 - [ ] B3 ROOT TUN, TUN2SOCKS, BPF2SOCKS: same command passes.
 - [ ] B4 Change the local proxy port in Settings, restart, rerun with the new `-p`: passes; the old
       port is closed.
-- [ ] B5 MagicDNS (optional): `bash tailnet-smoke.sh -m socks -p <socks-port> <peer-name> <peer-port>`.
+- [ ] B5 MagicDNS: `bash tailnet-smoke.sh -m socks -p <socks-port> <peer-name> <peer-port>` passes in
+      VPN and ROOT modes, with fake-ip and with redir-host DNS.
+- [ ] B6 `nslookup <peer-name>` (VPN mode, or ROOT with DNS hijack) returns the peer's Tailnet IP;
+      non-Tailnet names still resolve normally.
+- [ ] B7 `asterisk-tailnet-dns: false` in the profile: B5 fails, everything else unchanged.
 
 ## C. ROOT transparent routing (TPROXY, TUN2SOCKS, BPF2SOCKS)
 

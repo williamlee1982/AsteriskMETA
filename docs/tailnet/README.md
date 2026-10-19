@@ -1,7 +1,7 @@
 # Tailnet integration (Mihomo `type: tailscale`)
 
 This document describes how AsteriskMETA runs Mihomo's embedded Tailscale (`tsnet`) outbound,
-what the P0 change set verifies, the core API gap, and the plan for P1/P2. It is written for any
+what the P0 and P1 change sets add, how the app consumes the core, and the plan for P2. It is written for any
 rooted or non-rooted Android device; addresses below are examples only.
 
 ## How it works today
@@ -20,8 +20,8 @@ rules:
   - MATCH,DIRECT
 ```
 
-Facts established from the pinned sources (AsteriskMETA `main`, AndroidLibClashLite
-`v1.19.32-android.4`, Mihomo `v1.19.32`):
+Facts established from the sources (AsteriskMETA `main`, AndroidLibClashLite `main` + the
+Tailscale state API, Mihomo Alpha `v1.19.33-0.20261013123816-94b13aed49b8`, tailscale v1.104.1):
 
 | Area | Behavior | Where |
 | --- | --- | --- |
@@ -31,7 +31,7 @@ Facts established from the pinned sources (AsteriskMETA `main`, AndroidLibClashL
 | Mihomo home | Both the embedded VPN core (`Libclash.init(<filesDir>/clash)`) and the ROOT core (`mihomo -d <filesDir>/clash`) use the same home, now shared through `mihomoHomeDirectory()`. Relative `state-dir` values resolve identically in both modes. | `engine/mihomo/MihomoHome.kt` |
 | `state-dir` | Empty means `tailscale`; relative paths are joined to the home; absolute paths are kept. The embedded core is a CMFA build and accepts any path; the ROOT core (CLI build, CMFA disabled) rejects paths outside the home unless `SAFE_PATHS` is set. | Mihomo `adapter/outbound/tailscale.go`, `constant/path.go`; AndroidLibClashLite `scripts/prepare_sources.py` |
 | ROOT core identity | asteriskd starts the ROOT core as uid `0`, gid `3005`. Files created in ROOT mode are owned by root. | `asteriskd_core.c` |
-| Core API | AndroidLibClashLite exports no Tailscale state (no backend state, login URL, Tailnet IPs). `queryProxies` only lists the outbound type. | `libclash*.go` |
+| Core API | The core build used since P1 exports typed Tailscale state over JNI and the Clash controller (see below). Upstream AndroidLibClashLite releases and custom ROOT cores do not; the card then shows "no Tailscale state API". | `libclash_tailscale.go`, `native/tailscale` |
 
 ## What P0 adds
 
@@ -46,17 +46,18 @@ Facts established from the pinned sources (AsteriskMETA `main`, AndroidLibClashL
   * `TailscaleStateDirPolicy.kt` - read-only diagnostics: implicit default dir, two outbounds sharing
     one dir, dir outside the home (not portable to ROOT), another app's data dir (for example a
     standalone Tailscale app), shared storage. It never creates, reads or chmods state.
-  * `TailscaleStatus.kt` - typed contract `Stopped | Starting | NeedsLogin | Running | Error`,
-    `TailscaleStatusSource`, ipn-state mapping and `BundledCoreTailscaleStatusSource`, which reports
-    `CoreApiMissing` instead of guessing.
+  * `TailscaleStatus.kt` - typed contract `Idle | Stopped | Starting | NeedsLogin | Running | Error`.
   * `TailnetRedaction.kt` - redacts login URLs of any control server, `tskey-*`, node/machine keys,
     bearer tokens, cookies and `auth-key` assignments.
 * `features/mihomo/tailscale/` - a Home dashboard **Tailnet** card, shown only when the selected
-  profile has a tailscale outbound: name, hostname, state (currently "core has no status API"),
+  profile has a tailscale outbound: name, hostname, state,
   state-dir warnings and, in TPROXY/TUN2SOCKS/BPF2SOCKS, the private-address hint.
 * JVM unit tests (`app/src/test`, enabled for the debug variant) and a source-boundary test that
   keeps Tailnet code free of ROOT runtime imports, log scraping and hardcoded identities.
 * `scripts/tailnet/tailnet-smoke.sh` (+ hermetic self-test) and `REGRESSION_CHECKLIST.md`.
+
+(P0 shipped `BundledCoreTailscaleStatusSource`, which always reported `CoreApiMissing`; P1 replaced
+it with the core API below.)
 
 VPN/ROOT separation: all new code is side-effect free and lives outside `engine/root` except the
 pure policy extraction; the VPN lifecycle gains no ROOT call. The card reads only the selected
@@ -65,52 +66,93 @@ profile file and app settings.
 AsteriskBOX/AsteriskNG: not affected. Tailscale outbounds are a Mihomo feature; the new code sits in
 META-specific `engine/mihomo` and `features/mihomo` areas as `AGENTS.md` requires.
 
-## Core API blocker
+## What P1 adds
 
-Typed state cannot be shown yet because the bundled core does not expose it. Log lines such as the
-interactive login prompt are not an API: they are unstructured, localized by upstream, may carry
-secrets and are not available in ROOT mode through the embedded bridge. The app therefore ships the
-contract and a fake-driven presentation, and the production source returns `CoreApiMissing`.
+### Core (forks under `williamlee1982`, feature branches)
 
-Minimal binding change needed (separate, reviewable PRs; do not ship uncommitted binaries):
+| Repository | Branch | Change |
+| --- | --- | --- |
+| `AndroidLibClashLite` | `feat/tailscale-status` | Typed state API, redacted tsnet logs, latest Mihomo Alpha, Go 1.27.2 |
+| `tailscale` | `feat/upstream-v1.104.1` | MetaCubeX fork layout rebuilt on tailscale v1.104.1 (capability version 148) |
+| `tailscale-wireguard-go` | `feat/upstream-417aef36` | wireguard-go matching tailscale v1.104.1, on `metacubex/gvisor` |
 
-1. Mihomo (upstream request MetaCubeX/mihomo#3203): expose per-outbound status from
-   `tsnet.Server.LocalClient().StatusWithoutPeers()` / `WatchIPNBus` - backend state, Tailnet IPs,
-   self DNS name, `BrowseToURL` presence - through the Clash API (for example
-   `GET /proxies/{name}/tailscale`) so ROOT mode can read it over the controller.
-2. AndroidLibClashLite: export `QueryTailscaleStatus(name) string` (JSON) for the embedded path and
-   an explicit `RequestTailscaleLoginUrl(name) string` that is only called on user action.
-3. AsteriskMETA: implement `TailscaleStatusSource` for VPN (binding) and ROOT (controller), map
-   with `tailscaleBackendStateFromIpn`, and redact every error.
-4. Build the binding with `scripts/build_shared.py` from a tagged AndroidLibClashLite commit and bump
-   `ANDROID_LIB_CLASH_LITE_VERSION`; never commit a locally built AAR.
+API (both the JNI export and the authenticated Clash controller group):
 
-## Known limitations (P0)
+| Route / JNI | Result |
+| --- | --- |
+| `GET /asterisk/tailscale` / `queryTailscaleStatus()` | `{"outbounds":[{name,state,loginUrlAvailable,tailnetIps,hostname,dnsName,magicDnsSuffix,health,error}]}`; never starts tsnet, never carries a URL |
+| `POST /asterisk/tailscale/login?name=` / `startTailscaleLogin` | 202; starts tsnet if needed and requests an interactive login |
+| `GET /asterisk/tailscale/login-url?name=` / `queryTailscaleLoginURL` | The pending URL, on demand, `Cache-Control: no-store`; HTTP returns 403 unless the controller has a secret |
+| `POST /asterisk/tailscale/logout?name=` / `logoutTailscale` | 204; deauthorizes the node |
+
+States: `Idle` (declared, not started - Mihomo starts tsnet on first use), `Starting`,
+`NeedsLogin`, `NeedsMachineAuth`, `Running`, `Stopped`, `Error`. Errors and health are redacted in
+the core; the app redacts again.
+
+### How the app consumes the core
+
+* `buildSrc/.../BuildConfig.kt` pins `ANDROID_LIB_CLASH_LITE_VERSION` (a release tag) and
+  `ANDROID_LIB_CLASH_LITE_SHA256`; `:app:verifyLibclashAar` runs before every build and fails on a
+  mismatch.
+* `gradle.properties` `asterisk.libclash.repository` names the GitHub repository whose release
+  hosts `libclash.aar` (currently the fork's prerelease).
+* Local development: build with AndroidLibClashLite `scripts/build_shared.py --output <path>` and
+  pass `-Pasterisk.libclash.localAar=<absolute path>` (or set it in `~/.gradle/gradle.properties`).
+  The checksum is skipped for a local AAR. Never commit an AAR.
+
+### App
+
+* `engine/mihomo/tailscale/TailscaleCoreApi.kt` - JSON contract, mapping to
+  `TailscaleBackendState`, login-URL validation (https, no user info, host = the outbound's
+  `control-url` host, or `login.tailscale.com` without one).
+* `MihomoBridge`/`MihomoControlClient`/`MihomoRuntimeRepository` - JNI in VPN mode, controller in
+  ROOT and API mode (the same backend selection as other hot controls). A 404 on the list route
+  means the core has no API (`CoreApiMissing`).
+* `features/mihomo/tailscale/TailnetStatusSection.kt` - the Home **Tailnet** card polls state
+  (2 s while starting or waiting for login, 10 s otherwise) and shows state, Tailnet IPs, hostname
+  and MagicDNS name. **Log in** starts the login, waits for the URL, validates it and opens it with
+  `ACTION_VIEW`; the URL stays in memory and is never logged, persisted or shown. **Log out / reset**
+  asks for confirmation and logs the node out. It does not delete files: to wipe an identity,
+  stop the service and delete its `state-dir` (in ROOT mode the files are root-owned).
+* Redaction (`redactTailnetSecrets`) at every sink: the in-memory core/app log repositories (ingest
+  and restore), persisted log files, platform `Log` output with stack traces, log export, toasts and
+  the proxy error dialog (display and copy). The app has no crash reporter.
+
+### DNS
+
+The app reads the profile key `asterisk-tailnet-dns`, removes it before the profile reaches the
+core and, by default whenever the profile declares a tailscale outbound:
+
+* adds `dns.nameserver-policy` `+.<suffix>: tailscale://<outbound>` so MagicDNS names resolve
+  through the tailnet in every run mode (VPN, ROOT TPROXY/TUN/TUN2SOCKS/BPF2SOCKS, fake-ip and
+  redir-host);
+* adds `DOMAIN-SUFFIX,<suffix>,<outbound>` after the app's DNS-hijack rules so connections to those
+  names go through the tailnet.
+
+```yaml
+asterisk-tailnet-dns:
+  outbound: TS                       # default: first tailscale outbound
+  suffixes: [ts.net]                 # default; use your control server's base domain if custom
+  rules: true                        # false: only the nameserver-policy entry
+# asterisk-tailnet-dns: false        # disable
+```
+
+User `nameserver-policy` entries or `DOMAIN-SUFFIX` rules for the same suffix win. In ROOT
+TPROXY/TUN2SOCKS/BPF2SOCKS with redir-host DNS, a resolved Tailnet IP is still bypassed unless it is
+listed under **Private addresses** (`/32`); fake-ip mode does not need that. Raw configurations
+(overrides disabled) are passed through unchanged. Bare short names (MagicDNS search domains) are
+not handled.
+
+## Known limitations
 
 * Tailscale outbounds that come from proxy providers or override scripts are not detected by the
-  card (it parses the selected profile file only).
+  card (it parses the selected profile file only); the core still reports them.
 * ROOT-created state is root-owned; switching the same identity to VPN mode may fail to read it.
-  This needs on-device verification and an explicit ownership plan (P1); do not chmod state dirs.
-* No status, login, IP or reset actions until the core API exists.
-
-## P1 plan (not implemented)
-
-1. Typed state events (`Stopped`, `Starting`, `NeedsLogin`, `Running`, `Error`) with optional
-   on-demand login URL, Tailnet IPs and hostname, delivered by the API above.
-2. Tailnet screen: state, open the login URL in the browser only after verifying the configured
-   control host and expiry, show assigned IPs, disconnect/reset identity behind an explicit
-   confirmation (reset deletes only the resolved state-dir inside the Mihomo home), backend errors.
-3. Security: redact everywhere diagnostics are shared; never persist login URLs; keep state dirs
-   in app-private storage; never log state files.
-4. State ownership across modes: decide between (a) asteriskd restoring app ownership of the
-   Mihomo-home state after ROOT stop, or (b) documented per-mode identities; verify no duplicate
-   registration on mode switch.
-5. DNS: MagicDNS names via Mihomo `nameserver-policy` (`+.ts.net` / custom tailnet suffix) in VPN,
-   ROOT TPROXY and ROOT TUN; keep non-Tailnet DNS, carrier CGNAT, captive portals and split DNS
-   working. Tests for Wi-Fi/cellular switching, airplane mode, restart, IPv4/IPv6 and app UID bypass.
-6. Loop prevention: verify the core's own tsnet traffic (DERP/peer UDP, which may use carrier CGNAT
-   addresses) is never re-intercepted by ROOT TPROXY/TUN, and that no Android `VpnService` is created
-   in ROOT modes.
+  This needs on-device verification and an explicit ownership plan; do not chmod state dirs.
+* Opening the login page through the HTTP controller requires a controller secret, so another app
+  on the device cannot read the URL.
+* The forked tailscale module needs Go >= 1.27.1 (the Go 1.20 back-ports of the MetaCubeX fork were
+  dropped).
 
 ## P2 plan (not implemented)
 
