@@ -17,9 +17,9 @@ object ProjectConfig {
     const val BPF2SOCKS_VERSION = "v1.1.6"
     const val BPF_MATCHER_VERSION = "v1.0.2"
     const val ENHANCE_VERSION = "v1.0.7"
-    const val ANDROID_LIB_CLASH_LITE_VERSION = "v1.19.33-0.20261013123816-94b13aed49b8-android.1"
+    const val ANDROID_LIB_CLASH_LITE_VERSION = "v1.19.32-android.5-tailscale.1"
     /** SHA-256 of the release libclash.aar; checked by :app:verifyLibclashAar. */
-    const val ANDROID_LIB_CLASH_LITE_SHA256 = "ab53a872c71ecf50746ed4f01882aad6f249c3a5782b2d6b8cf548d1de6ac119"
+    const val ANDROID_LIB_CLASH_LITE_SHA256 = "7d8f60b25957653202c18a88950d8c583d42ac8719cde31e2d97db31f172e706"
     const val HEV_SOCKS5_TUNNEL_VERSION = "2.18.0"
     const val TARGET_SDK = 37
     const val TARGET_SDK_MINOR = 2
