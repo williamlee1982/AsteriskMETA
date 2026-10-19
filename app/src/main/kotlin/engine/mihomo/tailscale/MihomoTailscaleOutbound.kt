@@ -11,7 +11,8 @@ import org.snakeyaml.engine.v2.api.Load
  * Non-secret summary of a Mihomo `type: tailscale` outbound declared in a profile.
  *
  * Secret material is never retained: `auth-key` is reduced to [hasAuthKey] and `control-url`
- * to [usesCustomControlUrl], so instances are safe to log, render and snapshot in tests.
+ * to [usesCustomControlUrl] plus its host ([controlUrlHost], used to validate login URLs), so
+ * instances are safe to log, render and snapshot in tests.
  */
 internal data class MihomoTailscaleOutbound(
     val name: String,
@@ -20,6 +21,7 @@ internal data class MihomoTailscaleOutbound(
     val hasAuthKey: Boolean,
     val ephemeral: Boolean,
     val usesCustomControlUrl: Boolean,
+    val controlUrlHost: String? = null,
 )
 
 internal const val MihomoTailscaleProxyType = "tailscale"
@@ -39,6 +41,7 @@ internal fun Map<*, *>.mihomoTailscaleOutbounds(): List<MihomoTailscaleOutbound>
             hasAuthKey = proxy.stringOrNull("auth-key") != null,
             ephemeral = proxy["ephemeral"] == true,
             usesCustomControlUrl = proxy.stringOrNull("control-url") != null,
+            controlUrlHost = proxy.stringOrNull("control-url")?.controlUrlHostOrNull(),
         )
     }
 }
@@ -64,3 +67,6 @@ internal fun parseMihomoTailscaleOutbounds(profileYaml: String): List<MihomoTail
 
 private fun Map<*, *>.stringOrNull(key: String): String? =
     (this[key] as? String)?.trim()?.takeIf(String::isNotEmpty)
+
+private fun String.controlUrlHostOrNull(): String? =
+    runCatching { java.net.URI(this).host }.getOrNull()?.trim()?.lowercase()?.takeIf(String::isNotEmpty)

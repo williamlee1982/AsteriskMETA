@@ -39,9 +39,9 @@ class MihomoTailscaleOutboundTest {
         assertEquals("./tailscale-example-node", first.stateDir)
         assertTrue(first.hasAuthKey)
         assertTrue(first.usesCustomControlUrl)
+        assertEquals("only the host of control-url is kept", "control.example.net", first.controlUrlHost)
         assertFalse(first.ephemeral)
         assertFalse(first.toString().contains(FakeSecret))
-        assertFalse(first.toString().contains("control.example.net"))
         assertEquals(MihomoTailscaleOutbound("Second", null, null, false, true, false), outbounds[1])
     }
 

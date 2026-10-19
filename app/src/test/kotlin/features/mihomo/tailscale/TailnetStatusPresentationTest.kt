@@ -9,8 +9,10 @@ import app.modes.RunModeVpnService
 import engine.mihomo.tailscale.MihomoTailscaleOutbound
 import engine.mihomo.tailscale.TailscaleBackendState
 import engine.mihomo.tailscale.TailscaleStateDirIssue
+import engine.mihomo.tailscale.TailscaleStatusQuery
 import engine.mihomo.tailscale.TailscaleStatusResult
-import engine.mihomo.tailscale.TailscaleStatusSource
+import engine.mihomo.tailscale.TailscaleStatusUnavailableReason
+import kotlin.time.Duration.Companion.seconds
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -18,28 +20,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TailnetStatusPresentationTest {
-    /** Test double for a future structured core API. */
-    private class FakeTailscaleStatusSource(
-        private val states: Map<String, TailscaleBackendState>,
-    ) : TailscaleStatusSource {
-        val queries = mutableListOf<Pair<String, Boolean>>()
-
-        override fun query(outboundName: String, proxyRunning: Boolean): TailscaleStatusResult {
-            queries += outboundName to proxyRunning
-            return TailscaleStatusResult.Available(states.getValue(outboundName))
-        }
-    }
-
     @Test
     fun hiddenWithoutTailscaleOutbounds() {
-        val presentation = build(emptyList(), RunModeTproxy, FakeTailscaleStatusSource(emptyMap()))
+        val presentation = build(emptyList(), RunModeTproxy, TailscaleStatusQuery.Available(emptyMap()))
         assertFalse(presentation.visible)
         assertNull(presentation.rootRouting)
     }
 
     @Test
     fun showsTypedStateFromTheSourceAndStateDirIssues() {
-        val source = FakeTailscaleStatusSource(
+        val source = TailscaleStatusQuery.Available(
             mapOf(
                 "TS-A" to TailscaleBackendState.NeedsLogin(loginUrlAvailable = true),
                 "TS-B" to TailscaleBackendState.Running(listOf("100.101.102.103"), "node-b"),
@@ -52,7 +42,6 @@ class TailnetStatusPresentationTest {
         )
 
         assertTrue(presentation.visible)
-        assertEquals(listOf("TS-A" to true, "TS-B" to true), source.queries)
         assertEquals(TailscaleStatusResult.Available(TailscaleBackendState.NeedsLogin(true)), presentation.outbounds[0].status)
         assertEquals(listOf(TailscaleStateDirIssue.ImplicitDefault), presentation.outbounds[0].stateDirIssues)
         assertTrue(presentation.outbounds[1].stateDirIssues.isEmpty())
@@ -61,7 +50,7 @@ class TailnetStatusPresentationTest {
 
     @Test
     fun rootTransparentModesExplainPrivateAddressOverrides() {
-        val source = FakeTailscaleStatusSource(mapOf("TS" to TailscaleBackendState.Starting))
+        val source = TailscaleStatusQuery.Available(mapOf("TS" to TailscaleBackendState.Starting))
         val none = build(listOf(outbound("TS", "./ts")), RunModeTproxy, source, privateAddressCidrs = emptyList())
         assertEquals(TailnetRootRoutingHint(0, emptyList()), none.rootRouting)
 
@@ -76,19 +65,66 @@ class TailnetStatusPresentationTest {
         assertNull(build(listOf(outbound("TS", "./ts")), RunModeTun, source).rootRouting)
     }
 
+    @Test
+    fun outboundsMissingFromTheRunningCoreAreReported() {
+        val presentation = build(
+            listOf(outbound("TS", "./ts")),
+            RunModeVpnService,
+            TailscaleStatusQuery.Available(emptyMap()),
+        )
+        assertEquals(
+            TailscaleStatusResult.Unavailable(TailscaleStatusUnavailableReason.NotInRunningConfig),
+            presentation.outbounds.single().status,
+        )
+        assertEquals(TailnetOutboundAction.None, presentation.outbounds.single().action)
+    }
+
+    @Test
+    fun actionsFollowTheState() {
+        fun action(state: TailscaleBackendState) = tailnetOutboundAction(TailscaleStatusResult.Available(state))
+        assertEquals(TailnetOutboundAction.LogIn, action(TailscaleBackendState.Idle))
+        assertEquals(TailnetOutboundAction.LogIn, action(TailscaleBackendState.Stopped))
+        assertEquals(TailnetOutboundAction.LogIn, action(TailscaleBackendState.NeedsLogin(false)))
+        assertEquals(TailnetOutboundAction.LogIn, action(TailscaleBackendState.Error("x")))
+        assertEquals(TailnetOutboundAction.LogOut, action(TailscaleBackendState.NeedsLogin(false, machineAuthorization = true)))
+        assertEquals(TailnetOutboundAction.LogOut, action(TailscaleBackendState.Running(emptyList(), null)))
+        assertEquals(TailnetOutboundAction.None, action(TailscaleBackendState.Starting))
+        assertEquals(
+            TailnetOutboundAction.None,
+            tailnetOutboundAction(TailscaleStatusResult.Unavailable(TailscaleStatusUnavailableReason.CoreApiMissing)),
+        )
+    }
+
+    @Test
+    fun pollingIsFastOnlyWhileTransitional() {
+        assertEquals(2.seconds, tailnetPollInterval(TailscaleStatusQuery.Available(mapOf("a" to TailscaleBackendState.Starting))))
+        assertEquals(2.seconds, tailnetPollInterval(TailscaleStatusQuery.Available(mapOf("a" to TailscaleBackendState.NeedsLogin(true)))))
+        assertEquals(10.seconds, tailnetPollInterval(TailscaleStatusQuery.Available(mapOf("a" to TailscaleBackendState.Idle))))
+        assertEquals(10.seconds, tailnetPollInterval(TailscaleStatusQuery.Unavailable(TailscaleStatusUnavailableReason.ProxyNotRunning)))
+    }
+
+    @Test
+    fun loginHostsComeFromTheOutbound() {
+        val presentation = build(
+            listOf(outbound("TS", "./ts").copy(usesCustomControlUrl = true, controlUrlHost = "control.example.test")),
+            RunModeVpnService,
+            TailscaleStatusQuery.Available(mapOf("TS" to TailscaleBackendState.Idle)),
+        )
+        assertEquals(setOf("control.example.test"), presentation.outbounds.single().allowedLoginHosts)
+    }
+
     private fun build(
         outbounds: List<MihomoTailscaleOutbound>,
         runMode: Int,
-        source: TailscaleStatusSource,
+        source: TailscaleStatusQuery,
         privateAddressCidrs: List<String> = emptyList(),
     ) = buildTailnetStatusPresentation(
         outbounds = outbounds,
         runMode = runMode,
-        proxyRunning = true,
         privateAddressCidrs = privateAddressCidrs,
         mihomoHomeDirectory = "/data/user/0/example.app/files/clash",
         ownPackageName = "example.app",
-        statusSource = source,
+        statuses = source,
     )
 
     private fun outbound(name: String, stateDir: String?) =

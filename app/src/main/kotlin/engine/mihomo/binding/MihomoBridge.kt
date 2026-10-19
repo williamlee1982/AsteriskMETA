@@ -249,6 +249,27 @@ internal object MihomoBridge {
         Libclash.patchAutoSwitch(settingsJson)
     }
 
+    fun queryTailscaleStatus(): String {
+        ensureInitialized()
+        return Libclash.queryTailscaleStatus()
+    }
+
+    fun startTailscaleLogin(outboundName: String) {
+        ensureInitialized()
+        Libclash.startTailscaleLogin(outboundName)
+    }
+
+    /** Pending login URL; keep it in memory only. */
+    fun queryTailscaleLoginUrl(outboundName: String): String {
+        ensureInitialized()
+        return Libclash.queryTailscaleLoginURL(outboundName)
+    }
+
+    fun logoutTailscale(outboundName: String) {
+        ensureInitialized()
+        Libclash.logoutTailscale(outboundName)
+    }
+
     suspend fun fetchAndValid(
         path: File,
         url: String,

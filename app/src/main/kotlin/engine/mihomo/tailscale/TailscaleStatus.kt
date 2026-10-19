@@ -4,17 +4,25 @@
 package engine.mihomo.tailscale
 
 /**
- * Typed Tailscale backend state of one Mihomo tailscale outbound.
+ * Typed Tailscale backend state of one Mihomo tailscale outbound, as reported by the core's
+ * `/asterisk/tailscale` API (AndroidLibClashLite with the Tailscale state API).
  *
- * This is the app-side contract for MetaCubeX/mihomo#3203. A login URL is deliberately not part
- * of the model: [NeedsLogin] only says whether the core offered one. Opening it must go through a
- * dedicated, user-initiated action that fetches the URL on demand and never persists or logs it.
+ * A login URL is deliberately not part of the model: [NeedsLogin] only says whether the core
+ * offered one. Opening it goes through a user-initiated action that fetches the URL on demand,
+ * keeps it in memory and never persists or logs it.
  */
 internal sealed interface TailscaleBackendState {
+    /** The outbound exists but tsnet has not started; Mihomo starts it on first use. */
+    data object Idle : TailscaleBackendState
     data object Stopped : TailscaleBackendState
     data object Starting : TailscaleBackendState
     data class NeedsLogin(val loginUrlAvailable: Boolean, val machineAuthorization: Boolean = false) : TailscaleBackendState
-    data class Running(val tailnetAddresses: List<String>, val hostname: String?) : TailscaleBackendState
+    data class Running(
+        val tailnetAddresses: List<String>,
+        val hostname: String?,
+        val dnsName: String? = null,
+        val magicDnsSuffix: String? = null,
+    ) : TailscaleBackendState
 
     /** Use [tailscaleBackendError] so the message is always redacted. */
     data class Error(val redactedMessage: String) : TailscaleBackendState
@@ -23,30 +31,18 @@ internal sealed interface TailscaleBackendState {
 internal fun tailscaleBackendError(message: String): TailscaleBackendState.Error =
     TailscaleBackendState.Error(redactTailnetSecrets(message).take(MaxErrorMessageLength))
 
-/**
- * Maps a Tailscale `ipn.State` name, as a future structured core API would report it, to the
- * app model. Unknown names map to [TailscaleBackendState.Error] instead of guessing.
- */
-internal fun tailscaleBackendStateFromIpn(
-    ipnState: String,
-    loginUrlAvailable: Boolean = false,
-    tailnetAddresses: List<String> = emptyList(),
-    hostname: String? = null,
-): TailscaleBackendState = when (ipnState.trim()) {
-    "NoState", "Starting" -> TailscaleBackendState.Starting
-    "Stopped" -> TailscaleBackendState.Stopped
-    "NeedsLogin" -> TailscaleBackendState.NeedsLogin(loginUrlAvailable)
-    "NeedsMachineAuth" -> TailscaleBackendState.NeedsLogin(loginUrlAvailable = false, machineAuthorization = true)
-    "Running" -> TailscaleBackendState.Running(tailnetAddresses, hostname)
-    else -> tailscaleBackendError("Unknown Tailscale backend state")
-}
-
 internal enum class TailscaleStatusUnavailableReason {
-    /** The bundled AndroidLibClashLite/Mihomo core exposes no typed Tailscale state API. */
+    /** The running core has no `/asterisk/tailscale` API (for example a custom ROOT core). */
     CoreApiMissing,
 
     /** The proxy service is not running, so no core instance owns the outbound. */
     ProxyNotRunning,
+
+    /** The running core configuration has no tailscale outbound with this name. */
+    NotInRunningConfig,
+
+    /** The core API could not be reached; the message is redacted. */
+    QueryFailed,
 }
 
 internal sealed interface TailscaleStatusResult {
@@ -54,26 +50,17 @@ internal sealed interface TailscaleStatusResult {
     data class Unavailable(val reason: TailscaleStatusUnavailableReason) : TailscaleStatusResult
 }
 
-/**
- * Source of Tailscale state for a named outbound. Implementations must use a structured core API
- * (Go binding export or Mihomo controller endpoint); scraping core logs is not an implementation.
- */
-internal fun interface TailscaleStatusSource {
-    fun query(outboundName: String, proxyRunning: Boolean): TailscaleStatusResult
+/** One status poll of every tailscale outbound in the running core. */
+internal sealed interface TailscaleStatusQuery {
+    data class Available(val states: Map<String, TailscaleBackendState>) : TailscaleStatusQuery
+    data class Unavailable(val reason: TailscaleStatusUnavailableReason) : TailscaleStatusQuery
 }
 
-/**
- * Production source for the pinned core. AndroidLibClashLite v1.19.32-android.4 exports no
- * Tailscale state (see docs/tailnet/README.md), so a running core reports [CoreApiMissing].
- * Replace this object once the binding exposes typed state; callers need no change.
- */
-internal object BundledCoreTailscaleStatusSource : TailscaleStatusSource {
-    override fun query(outboundName: String, proxyRunning: Boolean): TailscaleStatusResult =
-        if (!proxyRunning) {
-            TailscaleStatusResult.Unavailable(TailscaleStatusUnavailableReason.ProxyNotRunning)
-        } else {
-            TailscaleStatusResult.Unavailable(TailscaleStatusUnavailableReason.CoreApiMissing)
-        }
+/** Status of [outboundName] within this poll. */
+internal fun TailscaleStatusQuery.resultFor(outboundName: String): TailscaleStatusResult = when (this) {
+    is TailscaleStatusQuery.Unavailable -> TailscaleStatusResult.Unavailable(reason)
+    is TailscaleStatusQuery.Available -> states[outboundName]?.let(TailscaleStatusResult::Available)
+        ?: TailscaleStatusResult.Unavailable(TailscaleStatusUnavailableReason.NotInRunningConfig)
 }
 
 private const val MaxErrorMessageLength = 240
