@@ -21,7 +21,7 @@ rules:
 ```
 
 Facts established from the sources (AsteriskMETA `main`, AndroidLibClashLite `main` + the
-Tailscale state API, Mihomo Alpha `v1.19.33-0.20261013123816-94b13aed49b8`, tailscale v1.104.1):
+Tailscale state API (`v1.19.32-android.5-tailscale.1`), Mihomo stable `v1.19.32`, tailscale v1.104.1):
 
 | Area | Behavior | Where |
 | --- | --- | --- |
@@ -72,7 +72,7 @@ META-specific `engine/mihomo` and `features/mihomo` areas as `AGENTS.md` require
 
 | Repository | Branch | Change |
 | --- | --- | --- |
-| `AndroidLibClashLite` | `feat/tailscale-status` | Typed state API, redacted tsnet logs, latest Mihomo Alpha, Go 1.27.2 |
+| `AndroidLibClashLite` | `feat/tailscale-status` | Typed state API, redacted tsnet logs, Mihomo stable v1.19.32 (pinned, test-guarded), Go >= 1.27.1 |
 | `tailscale` | `feat/upstream-v1.104.1` | MetaCubeX fork layout rebuilt on tailscale v1.104.1 (capability version 148) |
 | `tailscale-wireguard-go` | `feat/upstream-417aef36` | wireguard-go matching tailscale v1.104.1, on `metacubex/gvisor` |
 
@@ -86,8 +86,12 @@ API (both the JNI export and the authenticated Clash controller group):
 | `POST /asterisk/tailscale/logout?name=` / `logoutTailscale` | 204; deauthorizes the node |
 
 States: `Idle` (declared, not started - Mihomo starts tsnet on first use), `Starting`,
-`NeedsLogin`, `NeedsMachineAuth`, `Running`, `Stopped`, `Error`. Errors and health are redacted in
-the core; the app redacts again.
+`NeedsLogin`, `NeedsMachineAuth`, `Running`, `Stopped`, `Error`. A failed asynchronous login is
+reported as `Error` until the next attempt. Errors and health are redacted in the core; the app
+redacts again.
+
+Release tags of the fork use `v<mihomo>-android.<upstream N>-tailscale.<M>` so they never collide
+with upstream `-android.N` tags.
 
 ### How the app consumes the core
 
