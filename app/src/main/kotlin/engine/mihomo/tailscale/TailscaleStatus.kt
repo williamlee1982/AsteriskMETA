@@ -53,16 +53,34 @@ internal sealed interface TailscaleStatusResult {
     data class Unavailable(val reason: TailscaleStatusUnavailableReason) : TailscaleStatusResult
 }
 
+/**
+ * Identifies a tailscale outbound of the running core. Mihomo allows the same name in several
+ * proxy providers, so the provider is part of the identity; null means a top-level proxy.
+ */
+internal data class TailnetOutboundKey(val name: String, val provider: String? = null)
+
+/** One outbound reported by the running core. */
+internal data class TailscaleCoreOutbound(
+    val key: TailnetOutboundKey,
+    val state: TailscaleBackendState,
+    /** Effective, non-secret configuration; null when the core does not report it. */
+    val config: MihomoTailscaleOutbound?,
+)
+
 /** One status poll of every tailscale outbound in the running core. */
 internal sealed interface TailscaleStatusQuery {
-    data class Available(val states: Map<String, TailscaleBackendState>) : TailscaleStatusQuery
+    /** [outbounds] is the running core's effective list, including proxy-provider members. */
+    data class Available(val outbounds: List<TailscaleCoreOutbound>) : TailscaleStatusQuery {
+        val states: Map<TailnetOutboundKey, TailscaleBackendState> by lazy { outbounds.associate { it.key to it.state } }
+    }
+
     data class Unavailable(val reason: TailscaleStatusUnavailableReason) : TailscaleStatusQuery
 }
 
-/** Status of [outboundName] within this poll. */
-internal fun TailscaleStatusQuery.resultFor(outboundName: String): TailscaleStatusResult = when (this) {
+/** Status of [outbound] within this poll. */
+internal fun TailscaleStatusQuery.resultFor(outbound: TailnetOutboundKey): TailscaleStatusResult = when (this) {
     is TailscaleStatusQuery.Unavailable -> TailscaleStatusResult.Unavailable(reason)
-    is TailscaleStatusQuery.Available -> states[outboundName]?.let(TailscaleStatusResult::Available)
+    is TailscaleStatusQuery.Available -> states[outbound]?.let(TailscaleStatusResult::Available)
         ?: TailscaleStatusResult.Unavailable(TailscaleStatusUnavailableReason.NotInRunningConfig)
 }
 

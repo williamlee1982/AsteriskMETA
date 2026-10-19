@@ -9,6 +9,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -24,7 +25,8 @@ import app.LocalAppServices
 import app.R
 import engine.mihomo.mihomoHomeDirectory
 import engine.mihomo.runtime.MihomoRuntimeRepository
-import engine.mihomo.tailscale.MihomoTailscaleOutbound
+import engine.mihomo.tailscale.TailnetOutboundKey
+import engine.mihomo.tailscale.TailscaleCoreOutbound
 import engine.mihomo.tailscale.TailscaleBackendState
 import engine.mihomo.tailscale.TailscaleStatusQuery
 import engine.mihomo.tailscale.TailscaleStatusUnavailableReason
@@ -35,40 +37,77 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import ui.components.WarningConfirmDialog
 
+/** Latest Tailscale poll of the running core, shared by the dashboard and the Tailnet card. */
+@Stable
+internal class TailnetStatusState(initial: TailscaleStatusQuery) {
+    private var current by mutableStateOf(initial)
+
+    var statuses: TailscaleStatusQuery
+        get() = current
+        internal set(value) {
+            if (value is TailscaleStatusQuery.Available) lastReported = value.outbounds
+            current = value
+        }
+
+    /** Outbounds of the last successful poll since the service started; see [resolveTailnetCardOutbounds]. */
+    var lastReported: List<TailscaleCoreOutbound>? by mutableStateOf(null)
+        private set
+    internal var refreshTick by mutableIntStateOf(0)
+        private set
+
+    /** Polls again now, for example after a login or logout. */
+    fun refresh() {
+        refreshTick++
+    }
+}
+
 /**
- * Dashboard Tailnet card with live state, login and logout. Status is polled from the core's
- * structured API while the card is shown; the login URL is only held in memory long enough to
- * hand it to the browser.
+ * Polls the running core's Tailscale state while the dashboard is shown, whether or not the
+ * profile file declares a tailscale outbound: proxy providers and override scripts can add one,
+ * and a provider refresh can add or remove one at any time.
+ */
+@Composable
+internal fun rememberTailnetStatusState(appState: AppState): TailnetStatusState {
+    val services = LocalAppServices.current
+    val latestAppState by rememberUpdatedState(appState)
+    val state = remember(appState.proxyRunning) { TailnetStatusState(tailnetStatusPlaceholder(appState.proxyRunning)) }
+    LaunchedEffect(state, appState.proxyRunning, appState.runMode, state.refreshTick) {
+        if (!appState.proxyRunning) return@LaunchedEffect
+        while (isActive) {
+            state.statuses = services.mihomoRuntime.tailscaleStatuses(latestAppState)
+            delay(tailnetPollInterval(state.statuses))
+        }
+    }
+    return state
+}
+
+/**
+ * Dashboard Tailnet card with live state, login and logout for the outbounds chosen by
+ * [resolveTailnetCardOutbounds]. The login URL is only held in memory long enough to hand it to
+ * the browser.
  */
 @Composable
 internal fun TailnetStatusSection(
     appState: AppState,
-    outbounds: List<MihomoTailscaleOutbound>,
+    card: TailnetCardOutbounds,
+    statusState: TailnetStatusState,
     modifier: Modifier = Modifier,
 ) {
-    if (outbounds.isEmpty()) return
+    if (card.outbounds.isEmpty()) return
     val services = LocalAppServices.current
     val context = LocalContext.current
     val latestAppState by rememberUpdatedState(appState)
-    val actions = remember(services.mihomoRuntime) {
-        RepositoryTailnetControlActions(services.mihomoRuntime) { latestAppState }
+    val actions = remember(services.mihomoRuntime, statusState) {
+        RepositoryTailnetControlActions(services.mihomoRuntime, statusState) { latestAppState }
     }
-    var statuses by remember(appState.proxyRunning) { mutableStateOf(tailnetStatusPlaceholder(appState.proxyRunning)) }
-    var refreshTick by remember { mutableIntStateOf(0) }
-    var busyOutbound by remember { mutableStateOf<String?>(null) }
+    var busyOutbound by remember { mutableStateOf<TailnetOutboundKey?>(null) }
     var pendingLogout by remember { mutableStateOf<TailnetOutboundPresentation?>(null) }
     val scope = rememberCoroutineScope()
+    val statuses = statusState.statuses
 
-    LaunchedEffect(appState.proxyRunning, appState.runMode, outbounds, refreshTick) {
-        while (isActive) {
-            statuses = actions.statuses()
-            delay(tailnetPollInterval(statuses))
-        }
-    }
-
-    val presentation = remember(outbounds, appState.runMode, appState.privateAddressCidrs, statuses) {
+    val presentation = remember(card, appState.runMode, appState.privateAddressCidrs, statuses) {
         buildTailnetStatusPresentation(
-            outbounds = outbounds,
+            card = card,
             runMode = appState.runMode,
             privateAddressCidrs = appState.privateAddressCidrs,
             mihomoHomeDirectory = mihomoHomeDirectory(context.applicationContext.filesDir).absolutePath,
@@ -84,14 +123,14 @@ internal fun TailnetStatusSection(
         busyOutbound = busyOutbound,
         onLogIn = { outbound ->
             if (busyOutbound != null) return@TailnetStatusCard
-            busyOutbound = outbound.name
+            busyOutbound = outbound.key
             scope.launch {
                 try {
-                    val outcome = runTailnetLogin(actions, outbound.name, outbound.allowedLoginHosts)
+                    val outcome = runTailnetLogin(actions, outbound.key, outbound.allowedLoginHosts)
                     services.tipNotifier.show(messages.forLogin(outcome, context))
                 } finally {
                     busyOutbound = null
-                    refreshTick++
+                    statusState.refresh()
                 }
             }
         },
@@ -109,14 +148,14 @@ internal fun TailnetStatusSection(
         onConfirm = {
             val target = logoutTarget ?: return@WarningConfirmDialog
             pendingLogout = null
-            busyOutbound = target.name
+            busyOutbound = target.key
             scope.launch {
                 try {
-                    val failure = runTailnetLogout(actions, target.name)
+                    val failure = runTailnetLogout(actions, target.key)
                     services.tipNotifier.show(failure?.let(messages::forFailure) ?: messages.logoutDone)
                 } finally {
                     busyOutbound = null
-                    refreshTick++
+                    statusState.refresh()
                 }
             }
         },
@@ -125,15 +164,18 @@ internal fun TailnetStatusSection(
 
 private class RepositoryTailnetControlActions(
     private val repository: MihomoRuntimeRepository,
+    private val statusState: TailnetStatusState,
     private val appState: () -> AppState,
 ) : TailnetControlActions {
-    override suspend fun statuses(): TailscaleStatusQuery = repository.tailscaleStatuses(appState())
-    override suspend fun startLogin(outboundName: String): Result<Unit> =
-        repository.startTailscaleLogin(appState(), outboundName)
-    override suspend fun loginUrl(outboundName: String): Result<String> =
-        repository.tailscaleLoginUrl(appState(), outboundName)
-    override suspend fun logout(outboundName: String): Result<Unit> =
-        repository.logoutTailscale(appState(), outboundName)
+    // The login flow's own polls also keep the card current.
+    override suspend fun statuses(): TailscaleStatusQuery =
+        repository.tailscaleStatuses(appState()).also { statusState.statuses = it }
+    override suspend fun startLogin(outbound: TailnetOutboundKey): Result<Unit> =
+        repository.startTailscaleLogin(appState(), outbound)
+    override suspend fun loginUrl(outbound: TailnetOutboundKey): Result<String> =
+        repository.tailscaleLoginUrl(appState(), outbound)
+    override suspend fun logout(outbound: TailnetOutboundKey): Result<Unit> =
+        repository.logoutTailscale(appState(), outbound)
 }
 
 /** Shown before the first poll returns. */

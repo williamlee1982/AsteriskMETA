@@ -12,6 +12,10 @@ import engine.mihomo.tailscale.TailscaleStateDirIssue
 import engine.mihomo.tailscale.TailscaleStatusQuery
 import engine.mihomo.tailscale.TailscaleStatusResult
 import engine.mihomo.tailscale.TailscaleStatusUnavailableReason
+import engine.mihomo.tailscale.TailnetOutboundKey
+import engine.mihomo.tailscale.TailscaleCoreOutbound
+import engine.mihomo.tailscale.coreStates
+import engine.mihomo.tailscale.tailnetOutbound
 import kotlin.time.Duration.Companion.seconds
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -22,18 +26,16 @@ import org.junit.Test
 class TailnetStatusPresentationTest {
     @Test
     fun hiddenWithoutTailscaleOutbounds() {
-        val presentation = build(emptyList(), RunModeTproxy, TailscaleStatusQuery.Available(emptyMap()))
+        val presentation = build(emptyList(), RunModeTproxy, TailscaleStatusQuery.Available(emptyList()))
         assertFalse(presentation.visible)
         assertNull(presentation.rootRouting)
     }
 
     @Test
     fun showsTypedStateFromTheSourceAndStateDirIssues() {
-        val source = TailscaleStatusQuery.Available(
-            mapOf(
-                "TS-A" to TailscaleBackendState.NeedsLogin(loginUrlAvailable = true),
-                "TS-B" to TailscaleBackendState.Running(listOf("100.101.102.103"), "node-b"),
-            ),
+        val source = coreStates(
+            "TS-A" to TailscaleBackendState.NeedsLogin(loginUrlAvailable = true),
+            "TS-B" to TailscaleBackendState.Running(listOf("100.101.102.103"), "node-b"),
         )
         val presentation = build(
             listOf(outbound("TS-A", null), outbound("TS-B", "./tailscale-b")),
@@ -50,7 +52,7 @@ class TailnetStatusPresentationTest {
 
     @Test
     fun rootTransparentModesExplainPrivateAddressOverrides() {
-        val source = TailscaleStatusQuery.Available(mapOf("TS" to TailscaleBackendState.Starting))
+        val source = coreStates("TS" to TailscaleBackendState.Starting)
         val none = build(listOf(outbound("TS", "./ts")), RunModeTproxy, source, privateAddressCidrs = emptyList())
         assertEquals(TailnetRootRoutingHint(0, emptyList()), none.rootRouting)
 
@@ -70,7 +72,7 @@ class TailnetStatusPresentationTest {
         val presentation = build(
             listOf(outbound("TS", "./ts")),
             RunModeVpnService,
-            TailscaleStatusQuery.Available(emptyMap()),
+            TailscaleStatusQuery.Available(emptyList()),
         )
         assertEquals(
             TailscaleStatusResult.Unavailable(TailscaleStatusUnavailableReason.NotInRunningConfig),
@@ -97,9 +99,9 @@ class TailnetStatusPresentationTest {
 
     @Test
     fun pollingIsFastOnlyWhileTransitional() {
-        assertEquals(2.seconds, tailnetPollInterval(TailscaleStatusQuery.Available(mapOf("a" to TailscaleBackendState.Starting))))
-        assertEquals(2.seconds, tailnetPollInterval(TailscaleStatusQuery.Available(mapOf("a" to TailscaleBackendState.NeedsLogin(true)))))
-        assertEquals(10.seconds, tailnetPollInterval(TailscaleStatusQuery.Available(mapOf("a" to TailscaleBackendState.Idle))))
+        assertEquals(2.seconds, tailnetPollInterval(coreStates("a" to TailscaleBackendState.Starting)))
+        assertEquals(2.seconds, tailnetPollInterval(coreStates("a" to TailscaleBackendState.NeedsLogin(true))))
+        assertEquals(10.seconds, tailnetPollInterval(coreStates("a" to TailscaleBackendState.Idle)))
         assertEquals(10.seconds, tailnetPollInterval(TailscaleStatusQuery.Unavailable(TailscaleStatusUnavailableReason.ProxyNotRunning)))
     }
 
@@ -120,9 +122,92 @@ class TailnetStatusPresentationTest {
         val presentation = build(
             listOf(outbound("TS", "./ts").copy(usesCustomControlUrl = true, controlUrlHost = "control.example.test")),
             RunModeVpnService,
-            TailscaleStatusQuery.Available(mapOf("TS" to TailscaleBackendState.Idle)),
+            coreStates("TS" to TailscaleBackendState.Idle),
         )
         assertEquals(setOf("control.example.test"), presentation.outbounds.single().allowedLoginHosts)
+    }
+
+    @Test
+    fun profileFallbackIsMarked() {
+        val presentation = build(
+            listOf(outbound("TS", "./ts")),
+            RunModeVpnService,
+            TailscaleStatusQuery.Unavailable(TailscaleStatusUnavailableReason.ProxyNotRunning),
+        )
+        assertEquals(TailscaleStatusUnavailableReason.ProxyNotRunning, presentation.profileFallback)
+        assertEquals(TailnetOutboundSource.ProfileFile, presentation.outbounds.single().source)
+        assertNull(build(listOf(outbound("TS", "./ts")), RunModeVpnService, coreStates("TS" to TailscaleBackendState.Idle)).profileFallback)
+    }
+
+    @Test
+    fun coreReportedProviderMembersGetStateDirDiagnostics() {
+        val home = "/data/user/0/example.app/files/clash"
+        fun member(name: String, provider: String) = TailscaleCoreOutbound(
+            TailnetOutboundKey(name, provider),
+            TailscaleBackendState.Idle,
+            tailnetOutbound(name, stateDir = "$home/tailscale", provider = provider).copy(stateDirIsDefault = true),
+        )
+        val presentation = build(
+            emptyList(),
+            RunModeTproxy,
+            TailscaleStatusQuery.Available(
+                listOf(
+                    member("ts", "a"),
+                    member("ts", "b"),
+                    TailscaleCoreOutbound(TailnetOutboundKey("unknown", "c"), TailscaleBackendState.Idle, config = null),
+                ),
+            ),
+        )
+        assertEquals(listOf("a", "b", "c"), presentation.outbounds.map { it.provider })
+        val shared = listOf(TailscaleStateDirIssue.ImplicitDefault, TailscaleStateDirIssue.SharedWithAnotherOutbound)
+        assertEquals(shared, presentation.outbounds[0].stateDirIssues)
+        assertEquals(shared, presentation.outbounds[1].stateDirIssues)
+        assertTrue("no config, no diagnostics", presentation.outbounds[2].stateDirIssues.isEmpty())
+        assertEquals(
+            TailscaleStatusResult.Available(TailscaleBackendState.Idle),
+            presentation.outbounds[0].status,
+        )
+    }
+
+    @Test
+    fun coreReportedDirectoriesOutsideTheHomeAreFlagged() {
+        val presentation = build(
+            emptyList(),
+            RunModeVpnService,
+            TailscaleStatusQuery.Available(
+                listOf(
+                    TailscaleCoreOutbound(
+                        TailnetOutboundKey("ts", "p"),
+                        TailscaleBackendState.Idle,
+                        tailnetOutbound("ts", stateDir = "/data/data/com.tailscale.ipn/files", provider = "p"),
+                    ),
+                ),
+            ),
+        )
+        assertEquals(
+            listOf(TailscaleStateDirIssue.OutsideMihomoHome, TailscaleStateDirIssue.ForeignAppData),
+            presentation.outbounds.single().stateDirIssues,
+        )
+    }
+
+    @Test
+    fun staleProfileEntriesDoNotMakeRunningDirectoriesShared() {
+        val home = "/data/user/0/example.app/files/clash"
+        val presentation = build(
+            listOf(outbound("renamed", "./ts")),
+            RunModeVpnService,
+            TailscaleStatusQuery.Available(
+                listOf(
+                    TailscaleCoreOutbound(
+                        TailnetOutboundKey("ts"),
+                        TailscaleBackendState.Running(emptyList(), null),
+                        tailnetOutbound("ts", stateDir = "$home/ts"),
+                    ),
+                ),
+            ),
+        )
+        assertEquals(listOf("ts", "renamed"), presentation.outbounds.map { it.name })
+        assertTrue(presentation.outbounds.all { it.stateDirIssues.isEmpty() })
     }
 
     private fun build(
@@ -131,7 +216,7 @@ class TailnetStatusPresentationTest {
         source: TailscaleStatusQuery,
         privateAddressCidrs: List<String> = emptyList(),
     ) = buildTailnetStatusPresentation(
-        outbounds = outbounds,
+        card = resolveTailnetCardOutbounds(source, outbounds),
         runMode = runMode,
         privateAddressCidrs = privateAddressCidrs,
         mihomoHomeDirectory = "/data/user/0/example.app/files/clash",
@@ -139,6 +224,5 @@ class TailnetStatusPresentationTest {
         statuses = source,
     )
 
-    private fun outbound(name: String, stateDir: String?) =
-        MihomoTailscaleOutbound(name, hostname = null, stateDir = stateDir, hasAuthKey = false, ephemeral = false, usesCustomControlUrl = false)
+    private fun outbound(name: String, stateDir: String?) = tailnetOutbound(name, stateDir)
 }

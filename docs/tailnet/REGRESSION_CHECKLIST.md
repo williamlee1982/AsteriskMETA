@@ -47,6 +47,15 @@ files into notes, issues or screenshots.
 - [ ] A6 (ROOT) `ls -ld <filesDir>/clash/<state-dir>` is inside the app data directory and not
       world-readable. Do not change permissions.
 
+- [ ] A7 A tailscale outbound only in a proxy provider (and one added by an override script): with
+      the service running the card lists it with "From proxy provider: <name>" (the script one
+      without), and Log in / Log out act on that outbound. Repeat in VPN and one ROOT mode.
+- [ ] A8 Remove the outbound from the provider and refresh the provider: the card drops it within
+      one poll; add it back: it reappears as **Not started**.
+- [ ] A9 Two providers with a tailscale outbound of the same name: two rows, each logs in its own
+      node; their state dirs are reported as shared if they resolve to the same directory.
+- [ ] A10 Service stopped: the card shows the profile-file note and only top-level outbounds.
+
 ## B. Explicit SOCKS (all modes)
 
 - [ ] B1 VPN mode: `bash tailnet-smoke.sh -m socks -p <socks-port> <peer-ip> <peer-port>` passes.

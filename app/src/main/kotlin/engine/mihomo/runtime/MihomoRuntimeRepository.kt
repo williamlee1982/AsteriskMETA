@@ -13,6 +13,7 @@ import engine.mihomo.mihomoLogLevelName
 import engine.mihomo.mihomoControlConfig
 import engine.mihomo.selectedMihomoProfileOrNull
 import engine.mihomo.tailscale.MihomoTailscaleUnsupportedException
+import engine.mihomo.tailscale.TailnetOutboundKey
 import engine.mihomo.tailscale.TailscaleStatusQuery
 import engine.mihomo.tailscale.TailscaleStatusUnavailableReason
 import engine.mihomo.toMihomoAutoSwitchOptions
@@ -577,15 +578,15 @@ internal class MihomoRuntimeRepository(
         )
     }
 
-    suspend fun startTailscaleLogin(appState: AppState, outboundName: String): Result<Unit> =
-        tailscaleAction(appState) { control, useBridge -> client.startTailscaleLogin(control, outboundName, useBridge) }
+    suspend fun startTailscaleLogin(appState: AppState, outbound: TailnetOutboundKey): Result<Unit> =
+        tailscaleAction(appState) { control, useBridge -> client.startTailscaleLogin(control, outbound, useBridge) }
 
     /** Pending login URL. Keep it in memory only; never log, persist or put it in a notification. */
-    suspend fun tailscaleLoginUrl(appState: AppState, outboundName: String): Result<String> =
-        tailscaleAction(appState) { control, useBridge -> client.tailscaleLoginUrl(control, outboundName, useBridge) }
+    suspend fun tailscaleLoginUrl(appState: AppState, outbound: TailnetOutboundKey): Result<String> =
+        tailscaleAction(appState) { control, useBridge -> client.tailscaleLoginUrl(control, outbound, useBridge) }
 
-    suspend fun logoutTailscale(appState: AppState, outboundName: String): Result<Unit> =
-        tailscaleAction(appState) { control, useBridge -> client.logoutTailscale(control, outboundName, useBridge) }
+    suspend fun logoutTailscale(appState: AppState, outbound: TailnetOutboundKey): Result<Unit> =
+        tailscaleAction(appState) { control, useBridge -> client.logoutTailscale(control, outbound, useBridge) }
 
     private suspend fun <T> tailscaleAction(
         appState: AppState,

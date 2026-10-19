@@ -22,7 +22,13 @@ internal data class MihomoTailscaleOutbound(
     val ephemeral: Boolean,
     val usesCustomControlUrl: Boolean,
     val controlUrlHost: String? = null,
-)
+    /** Proxy provider that supplied the outbound; null for top-level `proxies` entries. */
+    val provider: String? = null,
+    /** The running core reported [stateDir] as Mihomo's implicit default directory. */
+    val stateDirIsDefault: Boolean = false,
+) {
+    val key: TailnetOutboundKey get() = TailnetOutboundKey(name, provider)
+}
 
 internal const val MihomoTailscaleProxyType = "tailscale"
 
@@ -47,9 +53,10 @@ internal fun Map<*, *>.mihomoTailscaleOutbounds(): List<MihomoTailscaleOutbound>
 }
 
 /**
- * Parses profile YAML and returns its tailscale outbounds, or an empty list for non-object or
- * invalid YAML. Outbounds that only exist in proxy providers or are injected by override scripts
- * are not visible here; see docs/tailnet/README.md for that limitation.
+ * Parses profile YAML and returns its top-level tailscale outbounds, or an empty list for
+ * non-object or invalid YAML. Outbounds of proxy providers and override scripts are not visible
+ * here; the running core reports them (see [parseTailscaleCoreStatuses]), so this is only the
+ * fallback while the core cannot.
  */
 internal fun parseMihomoTailscaleOutbounds(profileYaml: String): List<MihomoTailscaleOutbound> {
     val escaped = profileYaml.escapeSupplementaryYamlCodePoints()

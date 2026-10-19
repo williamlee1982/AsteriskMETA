@@ -21,7 +21,7 @@ rules:
 ```
 
 Facts established from the sources (AsteriskMETA `main`, AndroidLibClashLite `main` + the
-Tailscale state API (`v1.19.32-android.5-tailscale.1`), Mihomo stable `v1.19.32`, tailscale v1.104.1):
+Tailscale state API (`v1.19.32-android.5-tailscale.2`), Mihomo stable `v1.19.32`, tailscale v1.104.1):
 
 | Area | Behavior | Where |
 | --- | --- | --- |
@@ -49,8 +49,8 @@ Tailscale state API (`v1.19.32-android.5-tailscale.1`), Mihomo stable `v1.19.32`
   * `TailscaleStatus.kt` - typed contract `Idle | Stopped | Starting | NeedsLogin | Running | Error`.
   * `TailnetRedaction.kt` - redacts login URLs of any control server, `tskey-*`, node/machine keys,
     bearer tokens, cookies and `auth-key` assignments.
-* `features/mihomo/tailscale/` - a Home dashboard **Tailnet** card, shown only when the selected
-  profile has a tailscale outbound: name, hostname, state,
+* `features/mihomo/tailscale/` - a Home dashboard **Tailnet** card, shown when the running core or
+  the selected profile has a tailscale outbound (see "Effective outbounds" below): name, hostname, state,
   state-dir warnings and, in TPROXY/TUN2SOCKS/BPF2SOCKS, the private-address hint.
 * JVM unit tests (`app/src/test`, enabled for the debug variant) and a source-boundary test that
   keeps Tailnet code free of ROOT runtime imports, log scraping and hardcoded identities.
@@ -147,10 +147,33 @@ listed under **Private addresses** (`/32`); fake-ip mode does not need that. Raw
 (overrides disabled) are passed through unchanged. Bare short names (MagicDNS search domains) are
 not handled.
 
+### Effective outbounds (`-tailscale.2`)
+
+The card lists the running core's effective tailscale outbounds, so outbounds from proxy
+providers and override scripts are shown and follow provider refreshes (the card polls every 10 s,
+2 s while a login is in progress, whenever the service runs).
+
+* Core: every status carries `provider` (empty for top-level proxies) and a non-secret `config`
+  (`hostname`, resolved `stateDir`, `stateDirDefault`, `ephemeral`, `hasAuthKey`,
+  `customControlUrl`, `controlUrlHost`). An adapter is reported once even though Mihomo's implicit
+  `default` provider wraps the top-level proxies; the same name in two providers is two entries.
+  Login, login URL and logout take the provider (`provider=` on the controller, a second JNI
+  argument); without it the top-level outbound or the only provider member is used, and an
+  ambiguous name returns `409`.
+* App: `TailnetOutboundKey(name, provider)` identifies an outbound. `resolveTailnetCardOutbounds`
+  uses the core list while the core reports it; top-level profile outbounds the core does not run
+  stay visible as "not in the running configuration". While the service is stopped, the core has
+  no state API, the query fails or the first poll is pending, the card falls back to the profile
+  file and says so. Rows from a provider show the provider name. State-dir diagnostics use the
+  core-reported resolved directory; outbounds whose options are unknown (older core builds, for
+  provider members) get none. VPN mode uses JNI, ROOT modes the controller, as before.
+
 ## Known limitations
 
-* Tailscale outbounds that come from proxy providers or override scripts are not detected by the
-  card (it parses the selected profile file only); the core still reports them.
+* The DNS defaults below (`asterisk-tailnet-dns`) are computed from the profile file, so a
+  tailscale outbound that only a proxy provider or an override script adds gets no default
+  MagicDNS policy (`asterisk-tailnet-dns.outbound` must name a top-level outbound); add the
+  `nameserver-policy` entry and `DOMAIN-SUFFIX` rule in the profile or the override instead.
 * ROOT-created state is root-owned; switching the same identity to VPN mode may fail to read it.
   This needs on-device verification and an explicit ownership plan; do not chmod state dirs.
 * Opening the login page through the HTTP controller requires a controller secret, so another app

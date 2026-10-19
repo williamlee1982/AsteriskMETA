@@ -8,6 +8,9 @@ import engine.mihomo.tailscale.MihomoTailscaleUnsupportedException
 import engine.mihomo.tailscale.TailscaleBackendState
 import engine.mihomo.tailscale.TailscaleStatusQuery
 import engine.mihomo.tailscale.TailscaleStatusUnavailableReason
+import engine.mihomo.tailscale.TailnetOutboundKey
+import engine.mihomo.tailscale.TailscaleCoreOutbound
+import engine.mihomo.tailscale.coreStates
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -31,15 +34,17 @@ class TailnetLoginFlowTest {
             return if (remaining.size > 1) remaining.removeFirst() else remaining.first()
         }
 
-        override suspend fun startLogin(outboundName: String): Result<Unit> = loginResult.also { calls += "login:$outboundName" }
-        override suspend fun loginUrl(outboundName: String): Result<String> = loginUrlResult.also { calls += "login-url:$outboundName" }
-        override suspend fun logout(outboundName: String): Result<Unit> = logoutResult.also { calls += "logout:$outboundName" }
+        override suspend fun startLogin(outbound: TailnetOutboundKey): Result<Unit> = loginResult.also { calls += "login:${outbound.label()}" }
+        override suspend fun loginUrl(outbound: TailnetOutboundKey): Result<String> = loginUrlResult.also { calls += "login-url:${outbound.label()}" }
+        override suspend fun logout(outbound: TailnetOutboundKey): Result<Unit> = logoutResult.also { calls += "logout:${outbound.label()}" }
+
+        private fun TailnetOutboundKey.label() = provider?.let { "$it/$name" } ?: name
     }
 
-    private fun state(value: TailscaleBackendState) = TailscaleStatusQuery.Available(mapOf("ts" to value))
+    private fun state(value: TailscaleBackendState) = coreStates("ts" to value)
 
-    private fun login(actions: FakeActions) = runBlocking {
-        runTailnetLogin(actions, "ts", setOf("login.example.test"), pollInterval = 1.milliseconds, timeout = 50.milliseconds)
+    private fun login(actions: FakeActions, outbound: TailnetOutboundKey = TailnetOutboundKey("ts")) = runBlocking {
+        runTailnetLogin(actions, outbound, setOf("login.example.test"), pollInterval = 1.milliseconds, timeout = 50.milliseconds)
     }
 
     @Test
@@ -77,7 +82,7 @@ class TailnetLoginFlowTest {
         )
         assertEquals(
             TailnetLoginOutcome.Failed(TailnetActionFailure.NotInRunningConfig),
-            login(FakeActions(listOf(TailscaleStatusQuery.Available(emptyMap())))),
+            login(FakeActions(listOf(TailscaleStatusQuery.Available(emptyList())))),
         )
         assertEquals(
             TailnetLoginOutcome.Failed(TailnetActionFailure.CoreApiMissing),
@@ -115,10 +120,33 @@ class TailnetLoginFlowTest {
 
     @Test
     fun logoutReportsFailures() = runBlocking {
-        assertNull(runTailnetLogout(FakeActions(listOf(state(TailscaleBackendState.Idle))), "ts"))
+        assertNull(runTailnetLogout(FakeActions(listOf(state(TailscaleBackendState.Idle))), TailnetOutboundKey("ts")))
         assertEquals(
             TailnetActionFailure.ActionFailed,
-            runTailnetLogout(FakeActions(listOf(state(TailscaleBackendState.Idle)), logoutResult = Result.failure(IllegalStateException())), "ts"),
+            runTailnetLogout(FakeActions(listOf(state(TailscaleBackendState.Idle)), logoutResult = Result.failure(IllegalStateException())), TailnetOutboundKey("ts")),
         )
+    }
+
+    @Test
+    fun providerMembersAreAddressedByProvider() {
+        val member = TailnetOutboundKey("ts", provider = "sub")
+        val actions = FakeActions(
+            listOf(
+                TailscaleStatusQuery.Available(
+                    listOf(
+                        TailscaleCoreOutbound(TailnetOutboundKey("ts"), TailscaleBackendState.Running(emptyList(), null), null),
+                        TailscaleCoreOutbound(member, TailscaleBackendState.NeedsLogin(loginUrlAvailable = true), null),
+                    ),
+                ),
+            ),
+        )
+        assertTrue(login(actions, member) is TailnetLoginOutcome.OpenLoginPage)
+        assertEquals(listOf("login:sub/ts", "status", "login-url:sub/ts"), actions.calls)
+    }
+
+    @Test
+    fun anOutboundRemovedByAProviderRefreshEndsTheFlow() {
+        val actions = FakeActions(listOf(state(TailscaleBackendState.Starting), TailscaleStatusQuery.Available(emptyList())))
+        assertEquals(TailnetLoginOutcome.Failed(TailnetActionFailure.NotInRunningConfig), login(actions))
     }
 }

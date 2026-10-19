@@ -17,6 +17,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import app.R
+import engine.mihomo.tailscale.TailnetOutboundKey
 import engine.mihomo.tailscale.TailscaleBackendState
 import engine.mihomo.tailscale.TailscaleStateDirIssue
 import engine.mihomo.tailscale.TailscaleStatusResult
@@ -28,7 +29,7 @@ import ui.components.AsteriskPageCard
 internal fun TailnetStatusCard(
     presentation: TailnetStatusPresentation,
     modifier: Modifier = Modifier,
-    busyOutbound: String? = null,
+    busyOutbound: TailnetOutboundKey? = null,
     onLogIn: (TailnetOutboundPresentation) -> Unit = {},
     onLogOut: (TailnetOutboundPresentation) -> Unit = {},
 ) {
@@ -43,11 +44,18 @@ internal fun TailnetStatusCard(
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
+            if (presentation.profileFallback != null) {
+                Text(
+                    text = stringResource(R.string.tailnet_profile_fallback),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             presentation.outbounds.forEachIndexed { index, outbound ->
                 if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 TailnetOutboundRow(
                     outbound = outbound,
-                    busy = busyOutbound == outbound.name,
+                    busy = busyOutbound == outbound.key,
                     actionsEnabled = busyOutbound == null,
                     onLogIn = { onLogIn(outbound) },
                     onLogOut = { onLogOut(outbound) },
@@ -76,6 +84,13 @@ private fun TailnetOutboundRow(
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
         )
+        outbound.provider?.let { provider ->
+            Text(
+                text = stringResource(R.string.tailnet_outbound_provider, provider),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         val running = (outbound.status as? TailscaleStatusResult.Available)?.state as? TailscaleBackendState.Running
         (running?.hostname ?: outbound.hostname)?.let { hostname ->
             Text(

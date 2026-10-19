@@ -6,23 +6,27 @@ package features.mihomo.tailscale
 import app.modes.RunModeBpf2Socks
 import app.modes.RunModeTproxy
 import app.modes.RunModeTun2Socks
-import engine.mihomo.tailscale.MihomoTailscaleOutbound
+import engine.mihomo.tailscale.TailnetOutboundKey
 import engine.mihomo.tailscale.TailscaleBackendState
 import engine.mihomo.tailscale.TailscaleStateDirIssue
 import engine.mihomo.tailscale.TailscaleStatusQuery
 import engine.mihomo.tailscale.TailscaleStatusResult
+import engine.mihomo.tailscale.TailscaleStatusUnavailableReason
 import engine.mihomo.tailscale.allowedLoginHosts
 import engine.mihomo.tailscale.diagnoseTailscaleStateDirs
 import engine.mihomo.tailscale.resultFor
 import engine.network.tailnetPrivateAddressOverrides
 
 internal data class TailnetOutboundPresentation(
-    val name: String,
+    val key: TailnetOutboundKey,
     val hostname: String?,
     val status: TailscaleStatusResult,
     val stateDirIssues: List<TailscaleStateDirIssue>,
     val allowedLoginHosts: Set<String> = emptySet(),
+    val source: TailnetOutboundSource = TailnetOutboundSource.RunningCore,
 ) {
+    val name: String get() = key.name
+    val provider: String? get() = key.provider
     val action: TailnetOutboundAction get() = tailnetOutboundAction(status)
 }
 
@@ -55,21 +59,27 @@ internal data class TailnetRootRoutingHint(
 internal data class TailnetStatusPresentation(
     val outbounds: List<TailnetOutboundPresentation>,
     val rootRouting: TailnetRootRoutingHint?,
+    /** Set when the list comes from the profile file because the core cannot report it. */
+    val profileFallback: TailscaleStatusUnavailableReason? = null,
 ) {
     val visible: Boolean get() = outbounds.isNotEmpty()
 }
 
 internal fun buildTailnetStatusPresentation(
-    outbounds: List<MihomoTailscaleOutbound>,
+    card: TailnetCardOutbounds,
     runMode: Int,
     privateAddressCidrs: List<String>,
     mihomoHomeDirectory: String,
     ownPackageName: String,
     statuses: TailscaleStatusQuery,
 ): TailnetStatusPresentation {
-    if (outbounds.isEmpty()) return TailnetStatusPresentation(emptyList(), rootRouting = null)
-    val findings = diagnoseTailscaleStateDirs(outbounds, mihomoHomeDirectory, ownPackageName)
-        .associateBy { it.outboundName }
+    if (card.outbounds.isEmpty()) return TailnetStatusPresentation(emptyList(), rootRouting = null)
+    // Outbounds whose options are unknown get no state-dir findings rather than guessed ones.
+    // Running outbounds and profile entries the core does not run are checked separately, so a
+    // stale profile entry never reports a running outbound's directory as shared.
+    val findings = card.outbounds.filter { it.configKnown }.groupBy { it.source }.values.flatMap { group ->
+        group.zip(diagnoseTailscaleStateDirs(group.map { it.outbound }, mihomoHomeDirectory, ownPackageName))
+    }.associate { (entry, finding) -> entry.outbound.key to finding }
     val rootRouting = if (runMode in PrivateAddressRootModes) {
         val overrides = tailnetPrivateAddressOverrides(privateAddressCidrs)
         TailnetRootRoutingHint(overrides.hostOverrides.size, overrides.broadOverrides)
@@ -77,16 +87,19 @@ internal fun buildTailnetStatusPresentation(
         null
     }
     return TailnetStatusPresentation(
-        outbounds = outbounds.map { outbound ->
+        outbounds = card.outbounds.map { entry ->
+            val outbound = entry.outbound
             TailnetOutboundPresentation(
-                name = outbound.name,
+                key = outbound.key,
                 hostname = outbound.hostname,
-                status = statuses.resultFor(outbound.name),
-                stateDirIssues = findings[outbound.name]?.issues.orEmpty().sortedBy { it.ordinal },
+                status = statuses.resultFor(outbound.key),
+                stateDirIssues = findings[outbound.key]?.issues.orEmpty().sortedBy { it.ordinal },
                 allowedLoginHosts = outbound.allowedLoginHosts(),
+                source = entry.source,
             )
         },
         rootRouting = rootRouting,
+        profileFallback = card.profileFallback,
     )
 }
 

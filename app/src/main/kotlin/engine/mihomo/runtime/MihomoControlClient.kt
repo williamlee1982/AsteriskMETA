@@ -13,7 +13,8 @@ import engine.mihomo.DefaultMihomoDelayTimeoutMillis
 import engine.mihomo.MihomoAutoSwitchOptions
 import engine.mihomo.tailscale.MihomoTailscaleSecretRequiredException
 import engine.mihomo.tailscale.MihomoTailscaleUnsupportedException
-import engine.mihomo.tailscale.TailscaleBackendState
+import engine.mihomo.tailscale.TailnetOutboundKey
+import engine.mihomo.tailscale.TailscaleCoreOutbound
 import engine.mihomo.tailscale.parseTailscaleCoreStatuses
 import engine.mihomo.tailscale.parseTailscaleLoginUrl
 import engine.mihomo.tailscale.redactTailnetSecrets
@@ -331,34 +332,35 @@ internal class MihomoControlClient(
         autoSwitchRequest(config, method = "PATCH", body = body)
     }
 
-    fun getTailscaleStatuses(config: MihomoControlConfig, useBridge: Boolean): Map<String, TailscaleBackendState> {
+    fun getTailscaleStatuses(config: MihomoControlConfig, useBridge: Boolean): List<TailscaleCoreOutbound> {
         val response = if (useBridge) Clash.queryTailscaleStatus() else tailscaleRequest(config, TailscalePath)
         return parseTailscaleCoreStatuses(response)
     }
 
-    fun startTailscaleLogin(config: MihomoControlConfig, outboundName: String, useBridge: Boolean) {
+    fun startTailscaleLogin(config: MihomoControlConfig, outbound: TailnetOutboundKey, useBridge: Boolean) {
         if (useBridge) {
-            Clash.startTailscaleLogin(outboundName)
+            Clash.startTailscaleLogin(outbound.name, outbound.provider.orEmpty())
             return
         }
-        tailscaleRequest(config, "$TailscalePath/login?name=${outboundName.urlEncode()}", method = "POST")
+        tailscaleRequest(config, "$TailscalePath/login?${outbound.query()}", method = "POST")
     }
 
     /** Pending login URL; callers keep it in memory and never log or persist it. */
-    fun tailscaleLoginUrl(config: MihomoControlConfig, outboundName: String, useBridge: Boolean): String {
-        if (useBridge) return Clash.queryTailscaleLoginUrl(outboundName)
-        return parseTailscaleLoginUrl(
-            tailscaleRequest(config, "$TailscalePath/login-url?name=${outboundName.urlEncode()}"),
-        )
+    fun tailscaleLoginUrl(config: MihomoControlConfig, outbound: TailnetOutboundKey, useBridge: Boolean): String {
+        if (useBridge) return Clash.queryTailscaleLoginUrl(outbound.name, outbound.provider.orEmpty())
+        return parseTailscaleLoginUrl(tailscaleRequest(config, "$TailscalePath/login-url?${outbound.query()}"))
     }
 
-    fun logoutTailscale(config: MihomoControlConfig, outboundName: String, useBridge: Boolean) {
+    fun logoutTailscale(config: MihomoControlConfig, outbound: TailnetOutboundKey, useBridge: Boolean) {
         if (useBridge) {
-            Clash.logoutTailscale(outboundName)
+            Clash.logoutTailscale(outbound.name, outbound.provider.orEmpty())
             return
         }
-        tailscaleRequest(config, "$TailscalePath/logout?name=${outboundName.urlEncode()}", method = "POST")
+        tailscaleRequest(config, "$TailscalePath/logout?${outbound.query()}", method = "POST")
     }
+
+    private fun TailnetOutboundKey.query(): String =
+        "name=${name.urlEncode()}" + (provider?.let { "&provider=${it.urlEncode()}" } ?: "")
 
     private fun tailscaleRequest(config: MihomoControlConfig, path: String, method: String = "GET"): String =
         try {
