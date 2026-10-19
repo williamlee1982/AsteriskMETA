@@ -10,6 +10,7 @@ import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -53,7 +54,7 @@ internal fun TailnetStatusSection(
         RepositoryTailnetControlActions(services.mihomoRuntime) { latestAppState }
     }
     var statuses by remember { mutableStateOf<TailscaleStatusQuery>(NotPolledYet) }
-    var refreshTick by remember { mutableStateOf(0) }
+    var refreshTick by remember { mutableIntStateOf(0) }
     var busyOutbound by remember { mutableStateOf<String?>(null) }
     var pendingLogout by remember { mutableStateOf<TailnetOutboundPresentation?>(null) }
     val scope = rememberCoroutineScope()
