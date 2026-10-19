@@ -171,6 +171,7 @@ private fun tailnetStatusText(status: TailscaleStatusResult): String = when (sta
         TailscaleStatusUnavailableReason.ProxyNotRunning -> stringResource(R.string.tailnet_status_proxy_not_running)
         TailscaleStatusUnavailableReason.NotInRunningConfig -> stringResource(R.string.tailnet_status_not_in_running_config)
         TailscaleStatusUnavailableReason.QueryFailed -> stringResource(R.string.tailnet_status_query_failed)
+        TailscaleStatusUnavailableReason.Checking -> stringResource(R.string.tailnet_status_checking)
     }
     is TailscaleStatusResult.Available -> when (val state = status.state) {
         TailscaleBackendState.Idle -> stringResource(R.string.tailnet_status_idle)

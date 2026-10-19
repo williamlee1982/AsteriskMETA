@@ -43,6 +43,9 @@ internal enum class TailscaleStatusUnavailableReason {
 
     /** The core API could not be reached; the message is redacted. */
     QueryFailed,
+
+    /** The first poll has not returned yet. */
+    Checking,
 }
 
 internal sealed interface TailscaleStatusResult {

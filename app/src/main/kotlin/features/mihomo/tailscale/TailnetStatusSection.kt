@@ -53,7 +53,7 @@ internal fun TailnetStatusSection(
     val actions = remember(services.mihomoRuntime) {
         RepositoryTailnetControlActions(services.mihomoRuntime) { latestAppState }
     }
-    var statuses by remember { mutableStateOf<TailscaleStatusQuery>(NotPolledYet) }
+    var statuses by remember(appState.proxyRunning) { mutableStateOf(tailnetStatusPlaceholder(appState.proxyRunning)) }
     var refreshTick by remember { mutableIntStateOf(0) }
     var busyOutbound by remember { mutableStateOf<String?>(null) }
     var pendingLogout by remember { mutableStateOf<TailnetOutboundPresentation?>(null) }
@@ -136,9 +136,10 @@ private class RepositoryTailnetControlActions(
         repository.logoutTailscale(appState(), outboundName)
 }
 
-/** Placeholder before the first poll; renders as "not running" without querying the core. */
-private val NotPolledYet: TailscaleStatusQuery =
-    TailscaleStatusQuery.Unavailable(TailscaleStatusUnavailableReason.ProxyNotRunning)
+/** Shown before the first poll returns. */
+internal fun tailnetStatusPlaceholder(proxyRunning: Boolean): TailscaleStatusQuery = TailscaleStatusQuery.Unavailable(
+    if (proxyRunning) TailscaleStatusUnavailableReason.Checking else TailscaleStatusUnavailableReason.ProxyNotRunning,
+)
 
 /** Polls quickly while a state is transitional and slowly once it is settled. */
 internal fun tailnetPollInterval(statuses: TailscaleStatusQuery): Duration = when (statuses) {

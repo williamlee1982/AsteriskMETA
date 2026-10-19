@@ -1071,6 +1071,7 @@
     <string name="tailnet_state_dir_shared_storage">state-dir is on shared storage that other apps can read</string>
     <string name="tailnet_root_no_host_override">ROOT transparent mode bypasses %1$s. Add Tailnet hosts as /32 entries under Private addresses to route them through the core.</string>
     <string name="tailnet_root_host_overrides">Tailnet host overrides in Private addresses: %1$d</string>
+    <string name="tailnet_status_checking">Checking…</string>
     <string name="tailnet_status_idle">Not started; starts on first use</string>
     <string name="tailnet_status_not_in_running_config">Not in the running configuration; restart the proxy to apply profile changes</string>
     <string name="tailnet_status_query_failed">State unavailable: the core API did not respond</string>

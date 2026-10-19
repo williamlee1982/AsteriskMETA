@@ -104,6 +104,18 @@ class TailnetStatusPresentationTest {
     }
 
     @Test
+    fun placeholderBeforeTheFirstPollDoesNotClaimTheProxyIsStopped() {
+        assertEquals(
+            TailscaleStatusQuery.Unavailable(TailscaleStatusUnavailableReason.Checking),
+            tailnetStatusPlaceholder(proxyRunning = true),
+        )
+        assertEquals(
+            TailscaleStatusQuery.Unavailable(TailscaleStatusUnavailableReason.ProxyNotRunning),
+            tailnetStatusPlaceholder(proxyRunning = false),
+        )
+    }
+
+    @Test
     fun loginHostsComeFromTheOutbound() {
         val presentation = build(
             listOf(outbound("TS", "./ts").copy(usesCustomControlUrl = true, controlUrlHost = "control.example.test")),
