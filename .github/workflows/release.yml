@@ -424,22 +424,25 @@ jobs:
               --latest
           fi
 
-      - name: Validate Telegram secrets
+      - name: Check Telegram secrets
         if: env.SEND_TO_TELEGRAM == 'true'
+        id: telegram
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ]; then
-            echo "::error::Missing repository secret TELEGRAM_BOT_TOKEN."
-            exit 1
-          fi
-          if [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
-            echo "::error::Missing repository secret TELEGRAM_CHAT_ID."
-            exit 1
+          # Forks usually have no Telegram bot; skip the upload instead of failing the build.
+          missing=()
+          [ -n "${TELEGRAM_BOT_TOKEN:-}" ] || missing+=(TELEGRAM_BOT_TOKEN)
+          [ -n "${TELEGRAM_CHAT_ID:-}" ] || missing+=(TELEGRAM_CHAT_ID)
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::notice::Skipping Telegram upload: repository secret(s) ${missing[*]} not set."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Upload arm64-v8a release APKs to Telegram
-        if: env.SEND_TO_TELEGRAM == 'true'
+        if: env.SEND_TO_TELEGRAM == 'true' && steps.telegram.outputs.ready == 'true'
         shell: bash
         run: |
           set -euo pipefail
