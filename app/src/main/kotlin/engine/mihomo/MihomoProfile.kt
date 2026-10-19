@@ -3,6 +3,7 @@
 
 package engine.mihomo
 
+import engine.mihomo.tailscale.putTailnetDnsOverrides
 import android.content.Context
 import app.AppState
 import app.withCompatibleProxyAppListMode
@@ -238,6 +239,7 @@ private fun MutableMap<String, Any?>.putAsteriskRuntimeOverrides(
     putDnsOverrides(appState, forceDns)
     putDnsHijackOverrides(appState, runMode)
     putNtpWriteToSystemOverride()
+    putTailnetDnsOverrides()
 }
 
 internal fun resolveMihomoRuntimeProfileBytes(
