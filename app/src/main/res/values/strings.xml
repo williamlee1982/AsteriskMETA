@@ -1053,4 +1053,23 @@
     <string name="auto_switch_region_ca">Canada</string>
     <string name="auto_switch_region_au">Australia</string>
     <string name="auto_switch_region_nl">Netherlands</string>
+    <string name="tailnet_card_title">Tailnet</string>
+    <string name="tailnet_outbound_hostname">Hostname: %1$s</string>
+    <string name="tailnet_status_core_api_missing">State unavailable: the bundled core has no Tailscale status API yet</string>
+    <string name="tailnet_status_proxy_not_running">Proxy service is not running</string>
+    <string name="tailnet_status_stopped">Stopped</string>
+    <string name="tailnet_status_starting">Starting</string>
+    <string name="tailnet_status_needs_login">Login required</string>
+    <string name="tailnet_status_needs_machine_auth">Waiting for Tailnet admin approval</string>
+    <string name="tailnet_status_running">Connected</string>
+    <string name="tailnet_status_running_addresses">Connected · %1$s</string>
+    <string name="tailnet_status_error">Error: %1$s</string>
+    <string name="tailnet_state_dir_implicit_default">No state-dir set; outbounds without one share the default state directory</string>
+    <string name="tailnet_state_dir_shared">state-dir is shared with another Tailscale outbound</string>
+    <string name="tailnet_state_dir_outside_home">state-dir is outside the core directory; ROOT mode rejects it</string>
+    <string name="tailnet_state_dir_foreign_app">state-dir points into another app\'s data directory</string>
+    <string name="tailnet_state_dir_shared_storage">state-dir is on shared storage that other apps can read</string>
+    <string name="tailnet_root_no_host_override">ROOT transparent mode bypasses %1$s. Add Tailnet hosts as /32 entries under Private addresses to route them through the core.</string>
+    <string name="tailnet_root_host_overrides">Tailnet host overrides in Private addresses: %1$d</string>
+    <string name="tailnet_root_broad_override">Broad override %1$s also captures non-Tailnet carrier CGNAT traffic</string>
 </resources>

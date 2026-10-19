@@ -42,6 +42,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.pluralStringResource
@@ -73,11 +74,15 @@ import app.modes.RunModeTun
 import app.modes.RunModeTun2Socks
 import app.modes.isRootRunMode
 import app.navigation.MainDestination
+import engine.mihomo.mihomoHomeDirectory
 import engine.mihomo.mihomoModeName
 import engine.mihomo.raw.MihomoRawConfigParser
 import engine.mihomo.runtime.MihomoTrafficSample
 import engine.mihomo.runtime.MihomoTrafficState
 import engine.mihomo.selectedMihomoProfileOrNull
+import engine.mihomo.tailscale.BundledCoreTailscaleStatusSource
+import engine.mihomo.tailscale.MihomoTailscaleOutbound
+import engine.mihomo.tailscale.parseMihomoTailscaleOutbounds
 import features.home.HomeControllerState
 import features.home.HomeMonitoringOverviewState
 import features.home.HomeNetworkActivityState
@@ -101,6 +106,8 @@ import features.mihomo.provider.MihomoProviderUsageKind
 import features.mihomo.provider.MihomoProviderUsageLoadState
 import features.mihomo.provider.resolveSharedMihomoProviderUsageState
 import features.mihomo.provider.selectedMihomoProviderUsageLoadKeyOrNull
+import features.mihomo.tailscale.TailnetStatusCard
+import features.mihomo.tailscale.buildTailnetStatusPresentation
 import features.monitoring.MonitoringIntent
 import features.monitoring.ObserveMonitoring
 import kotlinx.coroutines.Dispatchers
@@ -212,6 +219,40 @@ fun MihomoDashboardPage(
             null
         }
     }
+    val tailscaleOutbounds by produceState<List<MihomoTailscaleOutbound>>(
+        initialValue = emptyList(),
+        key1 = selectedProfile?.id,
+        key2 = selectedProfile?.contentSha256,
+    ) {
+        value = if (selectedProfile?.hasContent == true) {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    parseMihomoTailscaleOutbounds(
+                        services.mihomoProfileContentStore.readBytes(selectedProfile).toString(Charsets.UTF_8),
+                    )
+                }.getOrDefault(emptyList())
+            }
+        } else {
+            emptyList()
+        }
+    }
+    val appContext = LocalContext.current.applicationContext
+    val tailnetPresentation = remember(
+        tailscaleOutbounds,
+        appState.runMode,
+        appState.proxyRunning,
+        appState.privateAddressCidrs,
+    ) {
+        buildTailnetStatusPresentation(
+            outbounds = tailscaleOutbounds,
+            runMode = appState.runMode,
+            proxyRunning = appState.proxyRunning,
+            privateAddressCidrs = appState.privateAddressCidrs,
+            mihomoHomeDirectory = mihomoHomeDirectory(appContext.filesDir).absolutePath,
+            ownPackageName = appContext.packageName,
+            statusSource = BundledCoreTailscaleStatusSource,
+        )
+    }
     val controllerState = remember(appState, controllerRuntimeState, rawMihomoMode) {
         buildHomeControllerState(appState, controllerRuntimeState, rawMihomoMode)
     }
@@ -293,6 +334,14 @@ fun MihomoDashboardPage(
                     onOpenConfiguration = { mainDestinationState?.select(MainDestination.Configurations) },
                     onOpenNode = { mainDestinationState?.select(MainDestination.Proxies) },
                 )
+            }
+            if (tailnetPresentation.visible) {
+                item("tailnet") {
+                    TailnetStatusCard(
+                        presentation = tailnetPresentation,
+                        modifier = HomeContentModifier,
+                    )
+                }
             }
             item("network_activity") {
                 NetworkActivityCard(networkActivityState)
