@@ -6,7 +6,9 @@ package features.mihomo.tailscale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,6 +28,9 @@ import ui.components.AsteriskPageCard
 internal fun TailnetStatusCard(
     presentation: TailnetStatusPresentation,
     modifier: Modifier = Modifier,
+    busyOutbound: String? = null,
+    onLogIn: (TailnetOutboundPresentation) -> Unit = {},
+    onLogOut: (TailnetOutboundPresentation) -> Unit = {},
 ) {
     AsteriskPageCard(modifier = modifier) {
         Column(
@@ -40,7 +45,13 @@ internal fun TailnetStatusCard(
             )
             presentation.outbounds.forEachIndexed { index, outbound ->
                 if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                TailnetOutboundRow(outbound)
+                TailnetOutboundRow(
+                    outbound = outbound,
+                    busy = busyOutbound == outbound.name,
+                    actionsEnabled = busyOutbound == null,
+                    onLogIn = { onLogIn(outbound) },
+                    onLogOut = { onLogOut(outbound) },
+                )
             }
             presentation.rootRouting?.let { hint ->
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -51,7 +62,13 @@ internal fun TailnetStatusCard(
 }
 
 @Composable
-private fun TailnetOutboundRow(outbound: TailnetOutboundPresentation) {
+private fun TailnetOutboundRow(
+    outbound: TailnetOutboundPresentation,
+    busy: Boolean,
+    actionsEnabled: Boolean,
+    onLogIn: () -> Unit,
+    onLogOut: () -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
             text = outbound.name,
@@ -59,7 +76,8 @@ private fun TailnetOutboundRow(outbound: TailnetOutboundPresentation) {
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
         )
-        outbound.hostname?.let { hostname ->
+        val running = (outbound.status as? TailscaleStatusResult.Available)?.state as? TailscaleBackendState.Running
+        (running?.hostname ?: outbound.hostname)?.let { hostname ->
             Text(
                 text = stringResource(R.string.tailnet_outbound_hostname, hostname),
                 style = MaterialTheme.typography.bodySmall,
@@ -75,6 +93,13 @@ private fun TailnetOutboundRow(outbound: TailnetOutboundPresentation) {
                 MaterialTheme.colorScheme.onSurfaceVariant
             },
         )
+        running?.dnsName?.let { dnsName ->
+            Text(
+                text = stringResource(R.string.tailnet_outbound_dns_name, dnsName),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         outbound.stateDirIssues.forEach { issue ->
             Text(
                 text = tailnetStateDirIssueText(issue),
@@ -85,6 +110,34 @@ private fun TailnetOutboundRow(outbound: TailnetOutboundPresentation) {
                     MaterialTheme.colorScheme.error
                 },
             )
+        }
+        TailnetOutboundActionButton(outbound.action, busy, actionsEnabled, onLogIn, onLogOut)
+    }
+}
+
+@Composable
+private fun TailnetOutboundActionButton(
+    action: TailnetOutboundAction,
+    busy: Boolean,
+    enabled: Boolean,
+    onLogIn: () -> Unit,
+    onLogOut: () -> Unit,
+) {
+    if (busy) {
+        Text(
+            text = stringResource(R.string.tailnet_action_in_progress),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
+    when (action) {
+        TailnetOutboundAction.None -> Unit
+        TailnetOutboundAction.LogIn -> FilledTonalButton(onClick = onLogIn, enabled = enabled) {
+            Text(stringResource(R.string.tailnet_action_log_in))
+        }
+        TailnetOutboundAction.LogOut -> OutlinedButton(onClick = onLogOut, enabled = enabled) {
+            Text(stringResource(R.string.tailnet_action_log_out))
         }
     }
 }
@@ -116,12 +169,17 @@ private fun tailnetStatusText(status: TailscaleStatusResult): String = when (sta
     is TailscaleStatusResult.Unavailable -> when (status.reason) {
         TailscaleStatusUnavailableReason.CoreApiMissing -> stringResource(R.string.tailnet_status_core_api_missing)
         TailscaleStatusUnavailableReason.ProxyNotRunning -> stringResource(R.string.tailnet_status_proxy_not_running)
+        TailscaleStatusUnavailableReason.NotInRunningConfig -> stringResource(R.string.tailnet_status_not_in_running_config)
+        TailscaleStatusUnavailableReason.QueryFailed -> stringResource(R.string.tailnet_status_query_failed)
     }
     is TailscaleStatusResult.Available -> when (val state = status.state) {
+        TailscaleBackendState.Idle -> stringResource(R.string.tailnet_status_idle)
         TailscaleBackendState.Stopped -> stringResource(R.string.tailnet_status_stopped)
         TailscaleBackendState.Starting -> stringResource(R.string.tailnet_status_starting)
         is TailscaleBackendState.NeedsLogin -> if (state.machineAuthorization) {
             stringResource(R.string.tailnet_status_needs_machine_auth)
+        } else if (state.loginUrlAvailable) {
+            stringResource(R.string.tailnet_status_login_available)
         } else {
             stringResource(R.string.tailnet_status_needs_login)
         }
