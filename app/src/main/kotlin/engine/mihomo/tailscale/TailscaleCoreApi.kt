@@ -28,6 +28,20 @@ internal data class TailscaleCoreStatus(
     val magicDnsSuffix: String? = null,
     val health: List<String> = emptyList(),
     val error: String? = null,
+    val provider: String? = null,
+    val config: TailscaleCoreConfig? = null,
+)
+
+/** Effective, non-secret outbound options; the core never sends the auth key or control URL. */
+@Serializable
+internal data class TailscaleCoreConfig(
+    val hostname: String? = null,
+    val stateDir: String? = null,
+    val stateDirDefault: Boolean = false,
+    val ephemeral: Boolean = false,
+    val hasAuthKey: Boolean = false,
+    val customControlUrl: Boolean = false,
+    val controlUrlHost: String? = null,
 )
 
 @Serializable
@@ -35,12 +49,31 @@ private data class TailscaleCoreLoginUrl(val url: String = "")
 
 private val TailscaleCoreJson = Json { ignoreUnknownKeys = true }
 
-/** Parses the core status list into typed states keyed by outbound name. */
-internal fun parseTailscaleCoreStatuses(json: String): Map<String, TailscaleBackendState> =
+/**
+ * Parses the core status list: every tailscale outbound of the running configuration, including
+ * proxy-provider members, in the core's order. Unnamed and repeated entries are dropped.
+ */
+internal fun parseTailscaleCoreStatuses(json: String): List<TailscaleCoreOutbound> =
     TailscaleCoreJson.decodeFromString(TailscaleCoreStatusList.serializer(), json)
         .outbounds
         .filter { it.name.isNotBlank() }
-        .associate { it.name to it.toBackendState() }
+        .map { status ->
+            val key = TailnetOutboundKey(status.name, status.provider?.takeIf(String::isNotEmpty))
+            TailscaleCoreOutbound(key, status.toBackendState(), status.config?.toOutbound(key))
+        }
+        .distinctBy { it.key }
+
+private fun TailscaleCoreConfig.toOutbound(key: TailnetOutboundKey) = MihomoTailscaleOutbound(
+    name = key.name,
+    hostname = hostname?.trim()?.takeIf(String::isNotEmpty),
+    stateDir = stateDir?.trim()?.takeIf(String::isNotEmpty),
+    hasAuthKey = hasAuthKey,
+    ephemeral = ephemeral,
+    usesCustomControlUrl = customControlUrl,
+    controlUrlHost = controlUrlHost?.trim()?.lowercase()?.takeIf(String::isNotEmpty),
+    provider = key.provider,
+    stateDirIsDefault = stateDirDefault,
+)
 
 internal fun TailscaleCoreStatus.toBackendState(): TailscaleBackendState = when (state) {
     "Idle" -> TailscaleBackendState.Idle

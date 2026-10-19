@@ -1097,4 +1097,6 @@
     <string name="tailnet_error_action_failed">The Tailscale action failed; see the core log</string>
     <string name="tailnet_error_no_browser">No app can open the login page</string>
     <string name="tailnet_root_broad_override">Broad override %1$s also captures non-Tailnet carrier CGNAT traffic</string>
+    <string name="tailnet_outbound_provider">From proxy provider: %1$s</string>
+    <string name="tailnet_profile_fallback">Read from the profile file because the core is not reporting its running configuration. Outbounds from proxy providers and override scripts are listed once the proxy is running.</string>
 </resources>

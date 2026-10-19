@@ -104,6 +104,8 @@ import features.mihomo.provider.MihomoProviderUsageLoadState
 import features.mihomo.provider.resolveSharedMihomoProviderUsageState
 import features.mihomo.provider.selectedMihomoProviderUsageLoadKeyOrNull
 import features.mihomo.tailscale.TailnetStatusSection
+import features.mihomo.tailscale.rememberTailnetStatusState
+import features.mihomo.tailscale.resolveTailnetCardOutbounds
 import features.monitoring.MonitoringIntent
 import features.monitoring.ObserveMonitoring
 import kotlinx.coroutines.Dispatchers
@@ -232,6 +234,10 @@ fun MihomoDashboardPage(
             emptyList()
         }
     }
+    val tailnetStatus = rememberTailnetStatusState(appState)
+    val tailnetCard = remember(tailnetStatus.statuses, tailnetStatus.lastReported, tailscaleOutbounds) {
+        resolveTailnetCardOutbounds(tailnetStatus.statuses, tailscaleOutbounds, tailnetStatus.lastReported)
+    }
     val controllerState = remember(appState, controllerRuntimeState, rawMihomoMode) {
         buildHomeControllerState(appState, controllerRuntimeState, rawMihomoMode)
     }
@@ -314,11 +320,12 @@ fun MihomoDashboardPage(
                     onOpenNode = { mainDestinationState?.select(MainDestination.Proxies) },
                 )
             }
-            if (tailscaleOutbounds.isNotEmpty()) {
+            if (tailnetCard.outbounds.isNotEmpty()) {
                 item("tailnet") {
                     TailnetStatusSection(
                         appState = appState,
-                        outbounds = tailscaleOutbounds,
+                        card = tailnetCard,
+                        statusState = tailnetStatus,
                         modifier = HomeContentModifier,
                     )
                 }

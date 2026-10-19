@@ -254,20 +254,21 @@ internal object MihomoBridge {
         return Libclash.queryTailscaleStatus()
     }
 
-    fun startTailscaleLogin(outboundName: String) {
+    /** An empty [provider] selects the top-level outbound, or the only provider member with [outboundName]. */
+    fun startTailscaleLogin(outboundName: String, provider: String) {
         ensureInitialized()
-        Libclash.startTailscaleLogin(outboundName)
+        Libclash.startTailscaleLogin(outboundName, provider)
     }
 
     /** Pending login URL; keep it in memory only. */
-    fun queryTailscaleLoginUrl(outboundName: String): String {
+    fun queryTailscaleLoginUrl(outboundName: String, provider: String): String {
         ensureInitialized()
-        return Libclash.queryTailscaleLoginURL(outboundName)
+        return Libclash.queryTailscaleLoginURL(outboundName, provider)
     }
 
-    fun logoutTailscale(outboundName: String) {
+    fun logoutTailscale(outboundName: String, provider: String) {
         ensureInitialized()
-        Libclash.logoutTailscale(outboundName)
+        Libclash.logoutTailscale(outboundName, provider)
     }
 
     suspend fun fetchAndValid(

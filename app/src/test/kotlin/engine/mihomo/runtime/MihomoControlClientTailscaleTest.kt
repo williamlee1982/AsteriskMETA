@@ -7,6 +7,7 @@ import com.sun.net.httpserver.HttpServer
 import engine.mihomo.MihomoControlConfig
 import engine.mihomo.tailscale.MihomoTailscaleSecretRequiredException
 import engine.mihomo.tailscale.MihomoTailscaleUnsupportedException
+import engine.mihomo.tailscale.TailnetOutboundKey
 import engine.mihomo.tailscale.TailscaleBackendState
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -52,7 +53,7 @@ class MihomoControlClientTailscaleTest {
     fun statusUsesTheControllerRouteWithTheSecret() {
         responses = mapOf("GET /asterisk/tailscale" to (200 to """{"outbounds":[{"name":"ts","state":"Starting","tailnetIps":[]}]}"""))
         val states = MihomoControlClient().getTailscaleStatuses(config("example-secret"), useBridge = false)
-        assertEquals(mapOf("ts" to TailscaleBackendState.Starting), states)
+        assertEquals(mapOf(TailnetOutboundKey("ts") to TailscaleBackendState.Starting), states.associate { it.key to it.state })
         assertEquals(listOf<String?>("Bearer example-secret"), authorizations)
     }
 
@@ -71,9 +72,25 @@ class MihomoControlClientTailscaleTest {
             "POST /asterisk/tailscale/logout?name=TS%20%E8%8A%82%E7%82%B9" to (204 to ""),
         )
         val client = MihomoControlClient()
-        client.startTailscaleLogin(config("s"), "TS 节点", useBridge = false)
-        assertEquals("https://login.example.test/a/abc", client.tailscaleLoginUrl(config("s"), "TS 节点", useBridge = false))
-        client.logoutTailscale(config("s"), "TS 节点", useBridge = false)
+        val outbound = TailnetOutboundKey("TS 节点")
+        client.startTailscaleLogin(config("s"), outbound, useBridge = false)
+        assertEquals("https://login.example.test/a/abc", client.tailscaleLoginUrl(config("s"), outbound, useBridge = false))
+        client.logoutTailscale(config("s"), outbound, useBridge = false)
+        assertEquals(3, requests.size)
+    }
+
+    @Test
+    fun providerMembersPassTheProvider() {
+        responses = mapOf(
+            "POST /asterisk/tailscale/login?name=ts&provider=%E8%AE%A2%E9%98%85%20A" to (202 to ""),
+            "GET /asterisk/tailscale/login-url?name=ts&provider=%E8%AE%A2%E9%98%85%20A" to (200 to """{"url":"https://login.example.test/a/abc"}"""),
+            "POST /asterisk/tailscale/logout?name=ts&provider=%E8%AE%A2%E9%98%85%20A" to (204 to ""),
+        )
+        val client = MihomoControlClient()
+        val outbound = TailnetOutboundKey("ts", provider = "订阅 A")
+        client.startTailscaleLogin(config("s"), outbound, useBridge = false)
+        assertEquals("https://login.example.test/a/abc", client.tailscaleLoginUrl(config("s"), outbound, useBridge = false))
+        client.logoutTailscale(config("s"), outbound, useBridge = false)
         assertEquals(3, requests.size)
     }
 
@@ -81,7 +98,7 @@ class MihomoControlClientTailscaleTest {
     fun loginUrlWithoutSecretIsReportedAsSuch() {
         responses = mapOf("GET /asterisk/tailscale/login-url?name=ts" to (403 to """{"message":"controller secret required"}"""))
         assertThrows(MihomoTailscaleSecretRequiredException::class.java) {
-            MihomoControlClient().tailscaleLoginUrl(config(), "ts", useBridge = false)
+            MihomoControlClient().tailscaleLoginUrl(config(), TailnetOutboundKey("ts"), useBridge = false)
         }
     }
 
@@ -92,7 +109,7 @@ class MihomoControlClientTailscaleTest {
                 (502 to """{"message":"see https://login.example.test/a/0123456789abcdef"}"""),
         )
         val error = assertThrows(IllegalStateException::class.java) {
-            MihomoControlClient().startTailscaleLogin(config(), "ts", useBridge = false)
+            MihomoControlClient().startTailscaleLogin(config(), TailnetOutboundKey("ts"), useBridge = false)
         }
         assertFalse(error.message.orEmpty().contains("0123456789abcdef"))
     }

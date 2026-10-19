@@ -1082,4 +1082,6 @@
     <string name="tailnet_error_action_failed">Tailscale 操作失败，请查看核心日志</string>
     <string name="tailnet_error_no_browser">没有可打开登录页的应用</string>
     <string name="tailnet_root_broad_override">宽范围覆盖 %1$s 会同时代理非 Tailnet 的运营商 CGNAT 流量</string>
+    <string name="tailnet_outbound_provider">来自代理集合：%1$s</string>
+    <string name="tailnet_profile_fallback">核心未提供正在运行的配置，以下内容读取自配置文件。代理运行后会列出来自代理集合和覆写脚本的出站。</string>
 </resources>

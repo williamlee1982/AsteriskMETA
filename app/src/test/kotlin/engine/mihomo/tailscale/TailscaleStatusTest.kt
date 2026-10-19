@@ -29,7 +29,7 @@ class TailscaleStatusTest {
               {"name":"","state":"Running","tailnetIps":[]}
             ]}
             """.trimIndent(),
-        )
+        ).associate { it.key.name to it.state }
 
         assertEquals(TailscaleBackendState.Idle, states["idle"])
         assertEquals(TailscaleBackendState.Starting, states["starting"])
@@ -60,7 +60,7 @@ class TailscaleStatusTest {
         val states = parseTailscaleCoreStatuses(
             """{"outbounds":[{"name":"ts","state":"Error","error":"visit https://login.example.test/a/0123456789abcdef now"}]}""",
         )
-        val error = states.getValue("ts") as TailscaleBackendState.Error
+        val error = states.single().state as TailscaleBackendState.Error
         assertFalse(error.redactedMessage.contains("0123456789abcdef"))
     }
 
@@ -98,15 +98,74 @@ class TailscaleStatusTest {
 
     @Test
     fun pollResultsResolvePerOutbound() {
-        val available = TailscaleStatusQuery.Available(mapOf("ts" to TailscaleBackendState.Starting))
-        assertEquals(TailscaleStatusResult.Available(TailscaleBackendState.Starting), available.resultFor("ts"))
+        val available = coreStates("ts" to TailscaleBackendState.Starting)
+        assertEquals(TailscaleStatusResult.Available(TailscaleBackendState.Starting), available.resultFor(TailnetOutboundKey("ts")))
         assertEquals(
             TailscaleStatusResult.Unavailable(TailscaleStatusUnavailableReason.NotInRunningConfig),
-            available.resultFor("other"),
+            available.resultFor(TailnetOutboundKey("other")),
+        )
+        assertEquals(
+            "a provider member is a different outbound than a top-level one with the same name",
+            TailscaleStatusResult.Unavailable(TailscaleStatusUnavailableReason.NotInRunningConfig),
+            available.resultFor(TailnetOutboundKey("ts", provider = "sub")),
         )
         assertEquals(
             TailscaleStatusResult.Unavailable(TailscaleStatusUnavailableReason.CoreApiMissing),
-            TailscaleStatusQuery.Unavailable(TailscaleStatusUnavailableReason.CoreApiMissing).resultFor("ts"),
+            TailscaleStatusQuery.Unavailable(TailscaleStatusUnavailableReason.CoreApiMissing).resultFor(TailnetOutboundKey("ts")),
         )
+    }
+
+    @Test
+    fun coreReportsProviderAndEffectiveConfig() {
+        val outbounds = parseTailscaleCoreStatuses(
+            """
+            {"outbounds":[
+              {"name":"ts","state":"Idle","tailnetIps":[],"provider":"subscription",
+               "config":{"hostname":" phone ","stateDir":"/data/home/tailscale","stateDirDefault":true,"ephemeral":true,
+                         "hasAuthKey":true,"customControlUrl":true,"controlUrlHost":"Control.Example.Test","futureField":1}},
+              {"name":"ts","state":"Running","tailnetIps":[],"provider":"",
+               "config":{"stateDir":"/data/home/ts-local","stateDirDefault":false,"ephemeral":false,"hasAuthKey":false,"customControlUrl":false}},
+              {"name":"legacy","state":"Idle","tailnetIps":[]}
+            ]}
+            """.trimIndent(),
+        )
+        assertEquals(
+            listOf(TailnetOutboundKey("ts", "subscription"), TailnetOutboundKey("ts"), TailnetOutboundKey("legacy")),
+            outbounds.map { it.key },
+        )
+        assertEquals(
+            MihomoTailscaleOutbound(
+                name = "ts",
+                hostname = "phone",
+                stateDir = "/data/home/tailscale",
+                hasAuthKey = true,
+                ephemeral = true,
+                usesCustomControlUrl = true,
+                controlUrlHost = "control.example.test",
+                provider = "subscription",
+                stateDirIsDefault = true,
+            ),
+            outbounds[0].config,
+        )
+        assertEquals("an empty provider means a top-level outbound", null, outbounds[1].config?.provider)
+        assertEquals("/data/home/ts-local", outbounds[1].config?.stateDir)
+        assertNull("older cores report no config", outbounds[2].config)
+    }
+
+    @Test
+    fun duplicateCoreEntriesAreReportedOnce() {
+        val outbounds = parseTailscaleCoreStatuses(
+            """{"outbounds":[{"name":"ts","state":"Idle"},{"name":"ts","state":"Running"},{"name":"ts","state":"Idle","provider":"p"}]}""",
+        )
+        assertEquals(listOf(TailnetOutboundKey("ts"), TailnetOutboundKey("ts", "p")), outbounds.map { it.key })
+        assertEquals(TailscaleBackendState.Idle, outbounds[0].state)
+    }
+
+    @Test
+    fun customControlUrlWithoutHostAllowsNoLoginHost() {
+        val outbound = parseTailscaleCoreStatuses(
+            """{"outbounds":[{"name":"ts","state":"Idle","config":{"customControlUrl":true}}]}""",
+        ).single().config!!
+        assertEquals(emptySet<String>(), outbound.allowedLoginHosts())
     }
 }

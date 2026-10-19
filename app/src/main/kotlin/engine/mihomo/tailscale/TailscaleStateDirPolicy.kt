@@ -48,7 +48,8 @@ internal data class TailscaleStateDirFinding(
 )
 
 /**
- * Checks tsnet state directories of all tailscale outbounds in one profile.
+ * Checks tsnet state directories of tailscale outbounds that run together. Findings are returned
+ * in the order of [outbounds]. A core-reported `stateDir` is already absolute and is kept as is.
  *
  * The check is read-only and never touches the file system: it neither creates, reads, nor
  * changes permissions of state directories.
@@ -66,7 +67,7 @@ internal fun diagnoseTailscaleStateDirs(
     return resolved.map { (outbound, path) ->
         val normalized = Paths.get(path)
         val issues = buildSet {
-            if (outbound.stateDir.isNullOrBlank()) add(TailscaleStateDirIssue.ImplicitDefault)
+            if (outbound.stateDir.isNullOrBlank() || outbound.stateDirIsDefault) add(TailscaleStateDirIssue.ImplicitDefault)
             if ((counts[path] ?: 0) > 1) add(TailscaleStateDirIssue.SharedWithAnotherOutbound)
             if (!normalized.startsWith(home) || normalized == home) add(TailscaleStateDirIssue.OutsideMihomoHome)
             if (normalized.foreignPackageOrNull(ownPackageName) != null) add(TailscaleStateDirIssue.ForeignAppData)
