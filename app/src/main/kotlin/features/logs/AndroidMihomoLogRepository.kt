@@ -3,6 +3,7 @@
 
 package features.logs
 
+import engine.mihomo.tailscale.redactTailnetSecrets
 import android.content.Context
 import engine.root.runtime.rootAsteriskdLogPath
 import kotlinx.coroutines.Dispatchers
@@ -45,7 +46,7 @@ internal abstract class AndroidMihomoLogRepository(
     fun appendPersisted(level: String, message: String, timestampMillis: Long?) {
         super.append(level, message, timestampMillis)
         val persistedTime = timestampMillis?.toString() ?: "—"
-        fileStore.appendLine("$persistedTime [$level] $message")
+        fileStore.appendLine("$persistedTime [$level] ${redactTailnetSecrets(message)}")
     }
 
     override fun clear() {

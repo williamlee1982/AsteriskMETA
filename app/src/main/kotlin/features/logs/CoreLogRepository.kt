@@ -3,6 +3,7 @@
 
 package features.logs
 
+import engine.mihomo.tailscale.redactTailnetSecrets
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,7 +35,8 @@ open class InMemoryCoreLogRepository(
     override val entries: StateFlow<List<CoreLogEntry>> = mutableEntries.asStateFlow()
 
     override fun append(level: String, message: String, timestampMillis: Long?) {
-        val normalizedMessage = message.trim()
+        // Single choke point for in-memory logs: secrets never reach the viewer, copy or export.
+        val normalizedMessage = redactTailnetSecrets(message.trim())
         if (normalizedMessage.isEmpty()) {
             return
         }
@@ -60,7 +62,7 @@ open class InMemoryCoreLogRepository(
     protected fun replaceEntries(entries: List<CoreLogEntry>) {
         val normalizedEntries = entries
             .mapNotNull { entry ->
-                val normalizedMessage = entry.message.trim()
+                val normalizedMessage = redactTailnetSecrets(entry.message.trim())
                 if (normalizedMessage.isEmpty()) {
                     null
                 } else {

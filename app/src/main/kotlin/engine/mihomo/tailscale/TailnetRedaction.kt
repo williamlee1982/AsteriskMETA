@@ -11,12 +11,16 @@ package engine.mihomo.tailscale
  * cookie headers and `auth-key` assignments in YAML/JSON. The function is pure and idempotent.
  */
 internal fun redactTailnetSecrets(text: String): String {
+    // Every log line passes through here; skip the regexes when no rule can match.
+    if (RedactionMarkers.none { text.contains(it, ignoreCase = true) }) return text
     var result = text
     RedactionRules.forEach { (pattern, replacement) -> result = pattern.replace(result, replacement) }
     return result
 }
 
 internal const val RedactedPlaceholder = "<redacted>"
+
+private val RedactionMarkers = listOf("/a/", "tskey-", "key:", "nlpriv:", "bearer", "cookie", "auth")
 
 private val RedactionRules: List<Pair<Regex, String>> = listOf(
     Regex("""\bhttps?://[^\s/'"<>]+/a/[^\s'"<>)]+""", RegexOption.IGNORE_CASE) to "<redacted-login-url>",

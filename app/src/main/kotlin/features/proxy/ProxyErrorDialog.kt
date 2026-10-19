@@ -3,6 +3,7 @@
 
 package features.proxy
 
+import engine.mihomo.tailscale.redactTailnetSecrets
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -187,7 +188,7 @@ private fun SectionLabel(text: String) {
 private fun MonospaceBlock(text: String) {
     SelectionContainer {
         Text(
-            text = text,
+            text = redactTailnetSecrets(text),
             style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
         )
     }
@@ -195,5 +196,5 @@ private fun MonospaceBlock(text: String) {
 
 private fun copyToClipboard(context: Context, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-    clipboard?.setPrimaryClip(ClipData.newPlainText("AsteriskMETA proxy error", text))
+    clipboard?.setPrimaryClip(ClipData.newPlainText("AsteriskMETA proxy error", redactTailnetSecrets(text)))
 }

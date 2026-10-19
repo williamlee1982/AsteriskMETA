@@ -4,22 +4,23 @@
 package features.logs
 
 import android.util.Log
+import engine.mihomo.tailscale.redactTailnetSecrets
 
 internal object AndroidAppLogger {
     fun platformWarn(tag: String, message: String, error: Throwable? = null) {
         if (error == null) {
-            Log.w(tag, message)
+            Log.w(tag, redactTailnetSecrets(message))
         } else {
-            Log.w(tag, message, error)
+            Log.w(tag, redactedLogText(message, error))
         }
     }
 
     fun debug(tag: String, message: String, error: Throwable? = null) {
         val timestampMillis = System.currentTimeMillis()
         if (error == null) {
-            Log.d(tag, message)
+            Log.d(tag, redactTailnetSecrets(message))
         } else {
-            Log.d(tag, message, error)
+            Log.d(tag, redactedLogText(message, error))
         }
         AndroidLogcatRepository.append("debug", logcatMessage(tag, message, error), timestampMillis)
     }
@@ -27,9 +28,9 @@ internal object AndroidAppLogger {
     fun info(tag: String, message: String, error: Throwable? = null) {
         val timestampMillis = System.currentTimeMillis()
         if (error == null) {
-            Log.i(tag, message)
+            Log.i(tag, redactTailnetSecrets(message))
         } else {
-            Log.i(tag, message, error)
+            Log.i(tag, redactedLogText(message, error))
         }
         AndroidLogcatRepository.append("info", logcatMessage(tag, message, error), timestampMillis)
     }
@@ -37,9 +38,9 @@ internal object AndroidAppLogger {
     fun warn(tag: String, message: String, error: Throwable? = null) {
         val timestampMillis = System.currentTimeMillis()
         if (error == null) {
-            Log.w(tag, message)
+            Log.w(tag, redactTailnetSecrets(message))
         } else {
-            Log.w(tag, message, error)
+            Log.w(tag, redactedLogText(message, error))
         }
         AndroidLogcatRepository.append("warning", logcatMessage(tag, message, error), timestampMillis)
     }
@@ -47,9 +48,9 @@ internal object AndroidAppLogger {
     fun error(tag: String, message: String, error: Throwable? = null) {
         val timestampMillis = System.currentTimeMillis()
         if (error == null) {
-            Log.e(tag, message)
+            Log.e(tag, redactTailnetSecrets(message))
         } else {
-            Log.e(tag, message, error)
+            Log.e(tag, redactedLogText(message, error))
         }
         AndroidLogcatRepository.append("error", logcatMessage(tag, message, error), timestampMillis)
     }
@@ -58,9 +59,9 @@ internal object AndroidAppLogger {
         return buildString {
             append(tag)
             append(": ")
-            append(message)
+            append(redactTailnetSecrets(message))
             if (error != null) {
-                val stackTrace = Log.getStackTraceString(error).trim()
+                val stackTrace = redactTailnetSecrets(Log.getStackTraceString(error).trim())
                 if (stackTrace.isNotEmpty()) {
                     append('\n')
                     append(stackTrace)
@@ -68,4 +69,8 @@ internal object AndroidAppLogger {
             }
         }
     }
+
+    /** Platform log text with the stack trace inlined, so exception messages are redacted too. */
+    private fun redactedLogText(message: String, error: Throwable): String =
+        redactTailnetSecrets("$message\n${Log.getStackTraceString(error)}")
 }

@@ -3,6 +3,8 @@
 
 package features.logs
 
+import engine.mihomo.tailscale.redactTailnetSecrets
+
 internal enum class LogLevelFilter {
     All,
     Debug,
@@ -35,4 +37,6 @@ internal fun reduceLogEntries(
     }
 }
 
-internal fun logEntriesForExport(entries: List<CoreLogEntry>): List<CoreLogEntry> = entries
+/** Entries are redacted on ingest; export redacts again so restored or legacy text never leaks. */
+internal fun logEntriesForExport(entries: List<CoreLogEntry>): List<CoreLogEntry> =
+    entries.map { entry -> entry.copy(message = redactTailnetSecrets(entry.message)) }

@@ -10,7 +10,7 @@ import java.io.File
 /**
  * Guards the P0 boundaries in source: Tailnet code is shared by VPN and ROOT, so it must not
  * depend on ROOT runtime code, must not scrape core logs for state and must not hardcode device
- * identities or login URLs.
+ * identities or login URLs, and must not log or persist anything (it handles login URLs).
  */
 class TailnetSourceBoundaryTest {
     private val sources: List<File> = listOf(
@@ -37,7 +37,15 @@ class TailnetSourceBoundaryTest {
 
     @Test
     fun noHardcodedLoginUrlsOrDeviceIdentities() {
-        assertNoneContains(listOf("login.tailscale.com", "tskey-auth-", "oneplus"))
+        // The default login host is allowed (it validates URLs); concrete login URLs are not.
+        assertNoneContains(listOf("login.tailscale.com/a/", "tskey-auth-", "oneplus"))
+    }
+
+    @Test
+    fun loginUrlsAreNeverLoggedOrPersisted() {
+        assertNoneContains(
+            listOf("AndroidAppLogger", "android.util.Log", "SharedPreferences", "dataStore", "putString", "writeText", "println("),
+        )
     }
 
     private fun assertNoneContains(needles: List<String>) {
