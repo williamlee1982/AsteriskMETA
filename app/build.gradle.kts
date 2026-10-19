@@ -5,6 +5,7 @@
 
 import com.android.build.api.variant.HasHostTestsBuilder
 import com.android.build.api.variant.HostTestBuilder
+import java.security.MessageDigest
 
 plugins {
     alias(libs.plugins.android.application)
@@ -12,6 +13,11 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
 }
+
+val libclashLocalAar: String? = providers.gradleProperty("asterisk.libclash.localAar").orNull?.takeIf(String::isNotBlank)
+//noinspection UseTomlInstead
+val libclashDependency: Any = libclashLocalAar?.let { files(it) }
+    ?: "com.github.Asterisk4Magisk:libclash:${ProjectConfig.ANDROID_LIB_CLASH_LITE_VERSION}@aar"
 
 val generatedSrcDir: Provider<Directory> = layout.buildDirectory.dir("generated/projectInfo")
 
@@ -128,8 +134,7 @@ dependencies {
     implementation(libs.dexlib2)
     implementation(libs.haze)
     implementation(libs.haze.blur)
-    //noinspection UseTomlInstead
-    implementation("com.github.Asterisk4Magisk:libclash:${ProjectConfig.ANDROID_LIB_CLASH_LITE_VERSION}@aar")
+    implementation(libclashDependency)
     implementation(dependencies.project(":asteriskd"))
     implementation(dependencies.project(":enhance"))
     implementation(dependencies.project(":bpfmatcher"))
@@ -152,6 +157,36 @@ dependencies {
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
+
+// The released core AAR is pinned by tag and SHA-256; a local build replaces it for development.
+val libclashArtifact: Configuration = configurations.create("libclashArtifact") {
+    isCanBeConsumed = false
+    isTransitive = false
+}
+dependencies {
+    libclashArtifact(libclashDependency)
+}
+val verifyLibclashAar = tasks.register("verifyLibclashAar") {
+    description = "Checks the SHA-256 of the AndroidLibClashLite AAR"
+    val aar: FileCollection = libclashArtifact
+    val expected = if (libclashLocalAar == null) ProjectConfig.ANDROID_LIB_CLASH_LITE_SHA256 else null
+    inputs.files(aar)
+    doLast {
+        if (expected == null) return@doLast
+        val digest = MessageDigest.getInstance("SHA-256")
+        aar.singleFile.inputStream().use { input ->
+            val buffer = ByteArray(1 shl 16)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        check(actual == expected) { "libclash.aar SHA-256 mismatch: expected $expected, got $actual" }
+    }
+}
+tasks.named("preBuild") { dependsOn(verifyLibclashAar) }
 
 val generateProjectInfo = tasks.register<GenerateProjectInfoTask>("generateProjectInfo") {
     description = "Generate ProjectInfo object for the app"
