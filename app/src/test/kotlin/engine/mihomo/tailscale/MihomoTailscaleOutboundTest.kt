@@ -1,0 +1,58 @@
+// Copyright 2026, AsteriskMETA contributors
+// SPDX-License-Identifier: GPL-3.0
+
+package engine.mihomo.tailscale
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class MihomoTailscaleOutboundTest {
+    @Test
+    fun extractsOnlyTailscaleOutboundsWithoutSecrets() {
+        val outbounds = parseMihomoTailscaleOutbounds(
+            """
+            mixed-port: 7890
+            proxies:
+              - name: TS
+                type: tailscale
+                hostname: example-node
+                state-dir: ./tailscale-example-node
+                auth-key: $FakeSecret
+                control-url: https://control.example.net
+                udp: true
+              - name: Second
+                type: Tailscale
+                ephemeral: true
+              - name: plain
+                type: socks5
+                server: 192.0.2.1
+                port: 1080
+              - type: tailscale
+            """.trimIndent(),
+        )
+
+        assertEquals(listOf("TS", "Second"), outbounds.map { it.name })
+        val first = outbounds[0]
+        assertEquals("example-node", first.hostname)
+        assertEquals("./tailscale-example-node", first.stateDir)
+        assertTrue(first.hasAuthKey)
+        assertTrue(first.usesCustomControlUrl)
+        assertFalse(first.ephemeral)
+        assertFalse(first.toString().contains(FakeSecret))
+        assertFalse(first.toString().contains("control.example.net"))
+        assertEquals(MihomoTailscaleOutbound("Second", null, null, false, true, false), outbounds[1])
+    }
+
+    @Test
+    fun invalidOrNonObjectYamlYieldsNoOutbounds() {
+        assertTrue(parseMihomoTailscaleOutbounds("proxies: [").isEmpty())
+        assertTrue(parseMihomoTailscaleOutbounds("- just\n- a list").isEmpty())
+        assertTrue(parseMihomoTailscaleOutbounds("proxies: not-a-list").isEmpty())
+    }
+
+    private companion object {
+        const val FakeSecret = "fixture-secret-value"
+    }
+}
