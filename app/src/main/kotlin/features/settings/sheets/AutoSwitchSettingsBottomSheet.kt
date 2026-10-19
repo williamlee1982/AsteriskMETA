@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.AppState
+import app.AutoSwitchExpectedDelayMillisRange
 import app.AutoSwitchFailureThresholdRange
 import app.AutoSwitchIntervalSecondsRange
 import app.AutoSwitchSettings
@@ -69,6 +70,7 @@ internal fun AutoSwitchSettingsBottomSheet(
         var loadFailed by remember { mutableStateOf(false) }
         var failures by remember { mutableStateOf(draft.failureThreshold.toString()) }
         var interval by remember { mutableStateOf(draft.intervalSeconds.toString()) }
+        var expectedDelay by remember { mutableStateOf(draft.expectedDelayMillis.toString()) }
         var pendingKeywords by remember { mutableStateOf(false) }
         var editorSession by remember { mutableIntStateOf(0) }
         LaunchedEffect(show, runtime, appState.selectedMihomoProfileId) {
@@ -76,6 +78,7 @@ internal fun AutoSwitchSettingsBottomSheet(
             // Reset only on opening so the exit animation keeps the current content.
             failures = draft.failureThreshold.toString()
             interval = draft.intervalSeconds.toString()
+            expectedDelay = draft.expectedDelayMillis.toString()
             pendingKeywords = false
             showLog = false
             info = null
@@ -90,9 +93,11 @@ internal fun AutoSwitchSettingsBottomSheet(
         }
         val failureCount = failures.toIntOrNull()?.takeIf { it in AutoSwitchFailureThresholdRange }
         val seconds = interval.toIntOrNull()?.takeIf { it in AutoSwitchIntervalSecondsRange }
+        val delayMillis = expectedDelay.toIntOrNull()?.takeIf { it in AutoSwitchExpectedDelayMillisRange }
         val groupsValid = !draft.enabled || (!loading && !loadFailed && draft.groups.isNotEmpty() &&
             draft.groups.all { name -> groups.any { it.name == name } })
-        val canSave = failureCount != null && seconds != null && groupsValid && !pendingKeywords
+        val canSave = failureCount != null && seconds != null && delayMillis != null && groupsValid &&
+            !pendingKeywords
         SettingsModalBottomSheet(
             show = show,
             title = stringResource(R.string.settings_auto_switch),
@@ -105,8 +110,14 @@ internal fun AutoSwitchSettingsBottomSheet(
                     icon = Icons.Rounded.Save,
                     enabled = canSave,
                     onClick = {
-                        if (failureCount != null && seconds != null) {
-                            onSave(draft.copy(failureThreshold = failureCount, intervalSeconds = seconds))
+                        if (failureCount != null && seconds != null && delayMillis != null) {
+                            onSave(
+                                draft.copy(
+                                    failureThreshold = failureCount,
+                                    intervalSeconds = seconds,
+                                    expectedDelayMillis = delayMillis,
+                                ),
+                            )
                         }
                     },
                 )
@@ -210,6 +221,18 @@ internal fun AutoSwitchSettingsBottomSheet(
                             onValueChange = { interval = it },
                             label = stringResource(R.string.auto_switch_interval),
                             errorText = if (seconds == null) stringResource(R.string.auto_switch_interval_invalid) else null,
+                            keyboardOptions = fiveDigitKeyboardOptions(),
+                            sanitizeInput = ::sanitizeFiveDigitInput,
+                        )
+                        SettingsTextField(
+                            value = expectedDelay,
+                            onValueChange = { expectedDelay = it },
+                            label = stringResource(R.string.auto_switch_expected_delay),
+                            errorText = if (delayMillis == null) {
+                                stringResource(R.string.auto_switch_expected_delay_invalid)
+                            } else {
+                                null
+                            },
                             keyboardOptions = fiveDigitKeyboardOptions(),
                             sanitizeInput = ::sanitizeFiveDigitInput,
                         )

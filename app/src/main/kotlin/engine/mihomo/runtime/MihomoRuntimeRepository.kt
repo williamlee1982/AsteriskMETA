@@ -542,8 +542,15 @@ internal class MihomoRuntimeRepository(
         val useBridge = resolveInteractiveBackend(appState, control).useBridge()
         val desired = appState.toMihomoAutoSwitchOptions()
         withContext(Dispatchers.IO) {
+            val current = client.getAutoSwitchState(control, useBridge).settings
+            // Cores before expected-delay omit it from their settings and would ignore the value.
+            if (desired.enable && (desired.expectedDelayMillis ?: 0) > 0 && current.expectedDelayMillis == null) {
+                throw MihomoAutoSwitchUnsupportedException(
+                    "The running core does not support expected-delay; install an updated AndroidLibClashLite core",
+                )
+            }
             // Re-patching identical settings would restart the core's failure counting.
-            if (!client.getAutoSwitchState(control, useBridge).settings.sameAs(desired)) {
+            if (!current.sameAs(desired)) {
                 client.patchAutoSwitch(control, desired, useBridge)
             }
         }
