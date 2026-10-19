@@ -12,6 +12,7 @@ compose-material3 = "1.13.0-alpha02"
 coil = "3.6.3"
 dexlib2 = "3.0.10"
 haze = "2.0.1"
+junit = "4.13.2"
 kotlin = "2.4.21"
 kotlinx-serialization-json = "1.11.0"
 ksp = "2.3.12"
@@ -41,6 +42,7 @@ coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" 
 dexlib2 = { module = "com.android.tools.smali:smali-dexlib2", version.ref = "dexlib2" }
 haze = { module = "dev.chrisbanes.haze:haze", version.ref = "haze" }
 haze-blur = { module = "dev.chrisbanes.haze:haze-blur", version.ref = "haze" }
+junit = { module = "junit:junit", version.ref = "junit" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization-json" }
 ktor-http = { module = "io.ktor:ktor-http", version.ref = "ktor" }
 libsu-core = { module = "com.github.topjohnwu.libsu:core", version.ref = "libsu" }

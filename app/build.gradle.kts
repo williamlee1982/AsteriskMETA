@@ -146,6 +146,7 @@ dependencies {
     implementation(libs.sora.editor)
     implementation(libs.zxing.android.embedded)
     ksp(libs.androidx.room.compiler)
+    testImplementation(libs.junit)
 }
 
 ksp {
@@ -169,7 +170,8 @@ androidComponents {
         (variant as? HasHostTestsBuilder)
             ?.hostTests
             ?.get(HostTestBuilder.UNIT_TEST_TYPE)
-            ?.enable = false
+            // JVM unit tests cover side-effect-free policy code; keep them debug-only.
+            ?.enable = variant.buildType == "debug"
     }
 
     onVariants { variant ->
