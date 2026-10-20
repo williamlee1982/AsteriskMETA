@@ -21,7 +21,7 @@ rules:
 ```
 
 Facts established from the sources (AsteriskMETA `main`, AndroidLibClashLite `main` + the
-Tailscale state API and inbound forwards (`v1.19.32-android.5-tailscale.4`), Mihomo stable `v1.19.32`, tailscale v1.104.1):
+Tailscale state API and inbound forwards (`v1.19.32-android.5-tailscale.5`), Mihomo stable `v1.19.32`, tailscale v1.104.1):
 
 | Area | Behavior | Where |
 | --- | --- | --- |
@@ -185,7 +185,9 @@ this workspace, so no sibling implementation was changed.
 
 Inbound forwarding is an opt-in, TCP-only way for another device on the Tailnet to reach a
 service listening on the phone. It requires an inbound-capable core (`v1.19.32-android.5-tailscale.4`
-or newer), which the app pins (AAR SHA-256 `e72d2c8b…c57e22`, checked by `:app:verifyLibclashAar`).
+or newer; the private-LAN target rule, state-dir conflict check and Accept backoff need
+`tailscale.5`), which the app pins (`tailscale.5`, AAR SHA-256 `7e50441a…45fd153b`, checked by
+`:app:verifyLibclashAar`).
 
 Declare forwards on a **top-level** `type: tailscale` outbound. The app does not invent targets or
 ports, and invalid entries remain visible on the Tailnet card for diagnosis:
