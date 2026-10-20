@@ -21,7 +21,7 @@ rules:
 ```
 
 Facts established from the sources (AsteriskMETA `main`, AndroidLibClashLite `main` + the
-Tailscale state API (`v1.19.32-android.5-tailscale.2`), Mihomo stable `v1.19.32`, tailscale v1.104.1):
+Tailscale state API (`v1.19.32-android.5-tailscale.3`), Mihomo stable `v1.19.32`, tailscale v1.104.1):
 
 | Area | Behavior | Where |
 | --- | --- | --- |
@@ -147,7 +147,7 @@ listed under **Private addresses** (`/32`); fake-ip mode does not need that. Raw
 (overrides disabled) are passed through unchanged. Bare short names (MagicDNS search domains) are
 not handled.
 
-### Effective outbounds (`-tailscale.2`)
+### Effective outbounds (`-tailscale.3`)
 
 The card lists the running core's effective tailscale outbounds, so outbounds from proxy
 providers and override scripts are shown and follow provider refreshes (the card polls every 10 s,
@@ -167,6 +167,10 @@ providers and override scripts are shown and follow provider refreshes (the card
   file and says so. Rows from a provider show the provider name. State-dir diagnostics use the
   core-reported resolved directory; outbounds whose options are unknown (older core builds, for
   provider members) get none. VPN mode uses JNI, ROOT modes the controller, as before.
+
+The pinned `-tailscale.3` core forwards Tailscale status control through Mihomo's
+automatic-close and SMUX proxy wrappers. Configured top-level and provider outbounds
+therefore remain visible to status polling without starting tsnet or creating state directories.
 
 The dashboard's fallback uses the selected profile **after its bound override script**, in the
 same order as runtime and MagicDNS preparation. Script-only tailscale outbounds therefore keep
