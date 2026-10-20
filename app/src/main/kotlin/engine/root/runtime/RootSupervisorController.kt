@@ -196,13 +196,23 @@ internal class RootSupervisorController(
             }
             stage = "await_ready"
             runCatching { AndroidAppLogger.info(LogTag, "root_start stage=launch result=sent") }
-            val snapshot = withTimeoutOrNull(StartTimeoutMilliseconds.milliseconds) {
+            if (launchMode == RootPublicationLaunchMode.Service) warnAboutPrivateDns(root)
+            // The supervisor bounds each start stage itself and ends in running/failed; the app
+            // waits for that terminal state (re-watching while it progresses) up to a hard cap.
+            val snapshot = withTimeoutOrNull(StartHardTimeoutMilliseconds.milliseconds) {
                 when (launchMode) {
-                    RootPublicationLaunchMode.Service -> client.awaitRunning(runtimeLayout.asteriskdPath)
+                    RootPublicationLaunchMode.Service -> client.awaitRunning(
+                        runtimeLayout.asteriskdPath,
+                        unboundTimeoutMilliseconds = StartTimeoutMilliseconds,
+                    )
                     RootPublicationLaunchMode.Monitor -> client.awaitStopped(runtimeLayout.asteriskdPath)
                     RootPublicationLaunchMode.None -> error("A non-launch publication has no runtime snapshot")
                 }
-            } ?: throw IllegalStateException("asteriskd did not reach the requested phase before timeout")
+            } ?: run {
+                // Do not leave a half-started supervisor behind once the app has given up.
+                withContext(NonCancellable) { runCatching { stopOwn() } }
+                throw IllegalStateException("asteriskd did not reach the requested phase before timeout")
+            }
             if (snapshot.owner != AsteriskdOwner.AsteriskMeta) throw RootRuntimeConflictException(snapshot)
             require(snapshot.mode == config.mode) { "Unexpected ROOT mode ${snapshot.mode.wireValue}" }
             if (launchMode == RootPublicationLaunchMode.Service) {
@@ -225,6 +235,7 @@ internal class RootSupervisorController(
         val initial = status()
         val initialSnapshot = initial.boundSnapshot() ?: run {
             RootFailureWatcher.stop()
+            RootOrphanCleanupCommand.stopFailure(cleanupOrphanedResources())?.let(::error)
             return initial
         }
         if (initialSnapshot.owner != AsteriskdOwner.AsteriskMeta) {
@@ -250,6 +261,7 @@ internal class RootSupervisorController(
         val initial = status()
         val initialSnapshot = initial.boundSnapshot() ?: run {
             RootFailureWatcher.stop()
+            cleanupOrphanedResources()
             return initial
         }
         if (initialSnapshot.owner != AsteriskdOwner.AsteriskMeta) {
@@ -316,6 +328,37 @@ internal class RootSupervisorController(
         return IllegalStateException(message)
     }
 
+    /** No supervisor answers: remove Asterisk-owned rules/routes a dead supervisor left behind. */
+    private suspend fun cleanupOrphanedResources(): RootOrphanCleanupOutcome {
+        val result = try {
+            shell.exec(RootOrphanCleanupCommand.build(runtimeLayout), ShellExecOptions(logFailure = false))
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return RootOrphanCleanupOutcome.Failed
+        }
+        val outcome = RootOrphanCleanupCommand.outcome(result)
+        runCatching {
+            if (outcome == RootOrphanCleanupOutcome.Failed) {
+                AndroidAppLogger.warn(LogTag, "root_cleanup result=failed exit=${result.errno}")
+            } else if (outcome != RootOrphanCleanupOutcome.Skipped) {
+                AndroidAppLogger.info(LogTag, "root_cleanup result=${outcome.name.lowercase()}")
+            }
+        }
+        return outcome
+    }
+
+    private suspend fun warnAboutPrivateDns(root: RootStartConfig) {
+        if (!root.enableLocalDns) return
+        val mode = runCatching {
+            shell.exec("settings get global private_dns_mode", ShellExecOptions(logFailure = false))
+                .takeIf { it.errno == 0 }?.stdout
+        }.getOrNull()
+        rootPrivateDnsWarning(mode, root.enableLocalDns, root.blockEncryptedDns)?.let { warning ->
+            runCatching { AndroidAppLogger.warn(LogTag, "root_private_dns $warning") }
+        }
+    }
+
     private fun preparePublication() {
         appContext.prepareRootPublicationDirectories()
     }
@@ -364,4 +407,7 @@ internal fun sanitizeLauncherStderr(stderr: String): String {
     return retained.joinToString("\n").trim().ifBlank { stderrWithoutCleanupWarnings }
 }
 
+/** Soft limit: the supervisor must bind its control socket within this window. */
 private const val StartTimeoutMilliseconds = 15_000L
+/** Hard cap for a progressing start (core readiness up to 60 s plus rule apply and rollback). */
+private const val StartHardTimeoutMilliseconds = 150_000L

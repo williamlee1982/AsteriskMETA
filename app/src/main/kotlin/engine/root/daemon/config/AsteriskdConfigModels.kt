@@ -131,6 +131,10 @@ internal data class AsteriskdNetworkConfig(
     val proxyPrivateCidrs: List<String>,
     val bypassPrivateCidrs: List<String>,
     val appPolicy: AsteriskdAppPolicy,
+    /** TPROXY: also capture sockets bound to an explicit Android network (opt-in). */
+    val captureBoundNetworks: Boolean = false,
+    /** Drop non-core DoT/DoQ (port 853) while local DNS interception is on (opt-in). */
+    val blockEncryptedDns: Boolean = false,
 )
 
 internal data class AsteriskdAppPolicy(

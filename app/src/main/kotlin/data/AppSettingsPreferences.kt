@@ -274,6 +274,14 @@ internal class AppSettingsPreferences(
                 KeyEnableRootIpv6Disabler,
                 defaults.enableRootIpv6Disabler,
             ),
+            enableRootCaptureBoundNetworks = preferences.getBoolean(
+                KeyEnableRootCaptureBoundNetworks,
+                defaults.enableRootCaptureBoundNetworks,
+            ),
+            enableRootBlockEncryptedDns = preferences.getBoolean(
+                KeyEnableRootBlockEncryptedDns,
+                defaults.enableRootBlockEncryptedDns,
+            ),
             socks5ProxyPort = preferences.getString(
                 KeySocks5ProxyPort,
                 defaults.socks5ProxyPort,
@@ -397,6 +405,8 @@ internal class AppSettingsPreferences(
             .putBoolean(KeyEnableRootEbpfRules, state.enableRootEbpfRules)
             .putBoolean(KeyEnableRootEbpfDirectCidrBypass, state.enableRootEbpfDirectCidrBypass)
             .putBoolean(KeyEnableRootIpv6Disabler, state.enableRootIpv6Disabler)
+            .putBoolean(KeyEnableRootCaptureBoundNetworks, state.enableRootCaptureBoundNetworks)
+            .putBoolean(KeyEnableRootBlockEncryptedDns, state.enableRootBlockEncryptedDns)
             .putString(KeySocks5ProxyPort, state.socks5ProxyPort)
             .putString(KeyBpf2SocksBridgePort, state.bpf2SocksBridgePort)
             .putServiceControl(state.serviceControl)
@@ -626,6 +636,8 @@ private const val KeyEnableAppListEnhancement = "enable_app_list_enhancement"
 private const val KeyEnableRootEbpfRules = "enable_root_ebpf_rules"
 private const val KeyEnableRootEbpfDirectCidrBypass = "enable_root_ebpf_direct_cidr_bypass"
 private const val KeyEnableRootIpv6Disabler = "enable_root_ipv6_disabler"
+private const val KeyEnableRootCaptureBoundNetworks = "enable_root_capture_bound_networks"
+private const val KeyEnableRootBlockEncryptedDns = "enable_root_block_encrypted_dns"
 private const val KeySocks5ProxyPort = "socks5_proxy_port"
 private const val KeyBpf2SocksBridgePort = "bpf2socks_bridge_port"
 private const val KeyServiceControlEnabled = "service_control_enabled"

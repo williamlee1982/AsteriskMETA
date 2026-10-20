@@ -84,9 +84,21 @@ private fun parseApi(root: Map<*, *>): RawConfigField<MihomoRawApiConfig> {
         value = MihomoRawApiConfig(
             control = parsed.copy(secret = root["secret"]?.toString().orEmpty()),
             hasSecret = !root["secret"]?.toString().isNullOrEmpty(),
+            bindsNonLoopback = !controllerBindHostIsLoopback(raw),
         ),
         path = path,
     )
+}
+
+private fun controllerBindHostIsLoopback(rawValue: String): Boolean {
+    val authority = rawValue.trim().substringAfter("://")
+    val host = if (authority.startsWith("[")) {
+        authority.substringAfter('[').substringBefore(']')
+    } else {
+        authority.substringBeforeLast(':', missingDelimiterValue = authority)
+    }.trim().lowercase()
+    return host == "localhost" || host == "::1" ||
+        Regex("127(?:\\.\\d{1,3}){3}").matches(host)
 }
 
 private fun parseController(rawValue: String, defaultScheme: String): MihomoControlConfig? {
@@ -197,6 +209,8 @@ private fun parseDnsHijack(root: Map<*, *>): RawConfigField<MihomoRawDnsHijack> 
             val matchesPort53 = Regex("DST-PORT,53(?:-53)?(?=[,)])").containsMatchIn(compact)
             matchesPort53 && target in dnsOutbounds.map(String::uppercase)
         }
+    val parsedRules = matches.mapNotNull(::parseDnsHijackRule)
+    val unrestricted = parsedRules.filter { it.inNames.isEmpty() && it.inTypes.isEmpty() }
     val tcp = matches.firstOrNull { dnsRuleCoversProtocol(it, "TCP") }
     val udp = matches.firstOrNull { dnsRuleCoversProtocol(it, "UDP") }
     val match = listOfNotNull(tcp, udp).distinct().joinToString("; ").takeIf(String::isNotEmpty)
@@ -204,11 +218,46 @@ private fun parseDnsHijack(root: Map<*, *>): RawConfigField<MihomoRawDnsHijack> 
     return RawConfigField(
         value = MihomoRawDnsHijack(
             dnsEnabled = dnsEnabled,
-            proven = dnsEnabled && tcp != null && udp != null,
+            proven = dnsEnabled && unrestricted.any { "TCP" in it.protocols } &&
+                unrestricted.any { "UDP" in it.protocols },
             matchedRule = match,
             outbound = outbound,
+            rules = parsedRules,
+            inbounds = parseInboundNames(root),
         ),
         path = "dns.enable + rules + proxies[type=dns]",
+    )
+}
+
+private fun parseInboundNames(root: Map<*, *>): MihomoRawInboundNames {
+    val tproxy = mutableSetOf<String>()
+    val tun = mutableSetOf<String>()
+    val socks = mutableSetOf<String>()
+    (root["listeners"] as? List<*>).orEmpty().forEach { item ->
+        val listener = item as? Map<*, *> ?: return@forEach
+        val name = listener["name"]?.toString()?.trim()?.uppercase()?.takeIf(String::isNotEmpty) ?: return@forEach
+        when (listener["type"]?.toString()?.trim()?.lowercase()) {
+            "tproxy" -> tproxy += name
+            "tun" -> tun += name
+            "socks", "mixed" -> socks += name
+        }
+    }
+    return MihomoRawInboundNames(tproxy = tproxy, tun = tun, socks = socks)
+}
+
+private fun parseDnsHijackRule(rule: String): MihomoRawDnsHijackRule? {
+    val protocols = listOf("TCP", "UDP").filter { dnsRuleCoversProtocol(rule, it) }.toSet()
+    if (protocols.isEmpty()) return null
+    val condition = rule.replace(" ", "").uppercase().substringBeforeLast(',')
+    val clauses = if (condition.startsWith("AND,((")) {
+        condition.removePrefix("AND,((").removeSuffix("))").split("),(")
+    } else {
+        listOf(condition)
+    }
+    return MihomoRawDnsHijackRule(
+        protocols = protocols,
+        inNames = clauses.filter { it.startsWith("IN-NAME,") }.map { it.removePrefix("IN-NAME,") }.toSet(),
+        inTypes = clauses.filter { it.startsWith("IN-TYPE,") }.map { it.removePrefix("IN-TYPE,") }.toSet(),
     )
 }
 

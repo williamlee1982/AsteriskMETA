@@ -143,6 +143,10 @@ data class AppState(
     val enableRootEbpfRules: Boolean = false,
     val enableRootEbpfDirectCidrBypass: Boolean = false,
     val enableRootIpv6Disabler: Boolean = false,
+    /** TPROXY: capture sockets bound to an explicit network (default off = upstream behaviour). */
+    val enableRootCaptureBoundNetworks: Boolean = false,
+    /** ROOT: drop non-core port 853 so Private DNS "automatic" falls back to intercepted port 53. */
+    val enableRootBlockEncryptedDns: Boolean = false,
     val socks5ProxyPort: String = RootModeEngine.DefaultTun2SocksProxyPort.toString(),
     val bpf2SocksBridgePort: String = RootModeEngine.DefaultBpf2SocksBridgePort.toString(),
 

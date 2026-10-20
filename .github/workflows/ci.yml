@@ -26,6 +26,9 @@ jobs:
           # Initialize submodules before parallel Gradle sync tasks can contend for .git/config.
           submodules: recursive
 
+      - name: asteriskd native tests (host)
+        run: make -C asteriskd/src/main/native/tests check
+
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
@@ -107,6 +110,9 @@ jobs:
           ndk_version="${ndk_package#ndk;}"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$ndk_version" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/$ndk_version" >> "$GITHUB_ENV"
+
+      - name: Unit tests
+        run: ./gradlew --no-daemon :app:testDebugUnitTest
 
       - name: Assemble release APKs
         run: ./gradlew --no-daemon :app:assembleRelease

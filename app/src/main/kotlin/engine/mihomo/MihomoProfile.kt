@@ -75,7 +75,7 @@ internal object MihomoProfileFactory {
             ?: error(MihomoProfileMissingErrorMessage)
         val sourceBytes = context.mihomoProfileContentStore().readBytes(selectedProfile)
         if (selectedProfile.disableOverrides && (!exposePorts || !appState.tailnetInboundForwardsEnabled)) {
-            return stripTailnetInboundForwardsFromRawProfile(sourceBytes)
+            return stripTailnetInboundForwardsFromRawProfile(sourceBytes).withRootMarkSafety(runMode)
         }
         val resolved = resolveMihomoRuntimeProfileBytes(
             sourceBytes = sourceBytes,
@@ -87,8 +87,11 @@ internal object MihomoProfileFactory {
                 useRootProviderPaths,
             )
         }
-        return resolved
+        return resolved.withRootMarkSafety(runMode)
     }
+
+    private fun ByteArray.withRootMarkSafety(runMode: Int): ByteArray =
+        if (runMode.isRootRunMode()) stripAsteriskRoutingMarkCollisions(this) else this
 
     fun buildProfile(
         context: Context,
@@ -246,6 +249,10 @@ private fun MutableMap<String, Any?>.putAsteriskRuntimeOverrides(
         if (runMode == RunModeTun) {
             put(MihomoTunRuntimeMarkerKey, true)
             put("listeners", listOf(appState.toMihomoTunListenerYamlMap(tunApplicationUids, this["rule-providers"])))
+        }
+        // ROOT modes run the core as root; other apps on the device can reach loopback.
+        check(!runMode.isRootRunMode() || control.secret.isNotBlank()) {
+            "Mihomo controller secret is empty; reopen settings to regenerate it before starting ROOT mode"
         }
         put("external-controller", control.address)
         put("secret", control.secret)
@@ -422,6 +429,7 @@ private fun MutableMap<String, Any?>.putDnsHijackOverrides(
     if (!requiresDnsHijackRule || !appState.effectiveLocalDnsEnabled) {
         return
     }
+    requireReservedDnsOutName(this["proxies"], this["proxy-groups"])
     put("proxies", normalizedProxiesWithDnsOut(this["proxies"]))
     put("rules", managedMihomoDnsRules((this["rules"] as? List<*>)?.map(::normalizeYamlValue).orEmpty(), runMode))
 }
@@ -659,7 +667,7 @@ private val YamlDumpSettings = DumpSettings.builder()
     .setDefaultFlowStyle(FlowStyle.BLOCK)
     .build()
 
-private fun dumpYaml(value: Any?): String {
+internal fun dumpYaml(value: Any?): String {
     return Dump(
         YamlDumpSettings,
         SingleQuotedStringRepresenter(YamlDumpSettings),

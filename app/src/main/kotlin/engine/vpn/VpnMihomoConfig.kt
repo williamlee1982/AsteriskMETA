@@ -98,7 +98,8 @@ internal object VpnMihomoConfigFactory {
             enableLocalDns = if (rawConfig == null) {
                 appState.effectiveLocalDnsEnabled
             } else {
-                appState.enableLocalDns && rawConfig.dnsHijack.value?.proven == true
+                appState.enableLocalDns &&
+                    rawConfig.dnsHijack.value?.provenFor(appState.runMode, appState.enableVpnHevTun) == true
             },
             dnsServers = tunOptions.dnsServers,
             mihomoProfilePath = profilePath,

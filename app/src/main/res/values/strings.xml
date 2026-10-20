@@ -588,6 +588,10 @@
     <string name="settings_root_ebpf_matcher_summary">Faster large app lists and address filtering</string>
     <string name="settings_root_ipv6_disabler">Disable system IPv6</string>
     <string name="settings_root_ipv6_disabler_summary">Prevent WebRTC IPv6 address leaks</string>
+    <string name="settings_root_capture_bound_networks">Capture network-bound apps</string>
+    <string name="settings_root_capture_bound_networks_summary">Also proxy apps that bind a specific network (Wi-Fi/cellular). Off keeps the default bypass</string>
+    <string name="settings_root_block_encrypted_dns">Block encrypted DNS (port 853)</string>
+    <string name="settings_root_block_encrypted_dns_summary">Drop DoT/DoQ so automatic Private DNS falls back to intercepted DNS. Breaks strict Private DNS</string>
     <string name="settings_root_required">No ROOT access detected!</string>
 
     <!-- Enhancement module -->

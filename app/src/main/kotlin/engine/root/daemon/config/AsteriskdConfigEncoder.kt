@@ -82,7 +82,7 @@ private fun AsteriskdCoreConfig.toJsonObject(): JsonObject = buildJsonObject {
     put("ageSecretKey", ageSecretKey?.let(::JsonPrimitive) ?: JsonNull)
 }
 
-private fun AsteriskdNetworkConfig.toJsonObject(): JsonObject = buildJsonObject {
+internal fun AsteriskdNetworkConfig.toJsonObject(): JsonObject = buildJsonObject {
     put("enableIpv6", enableIpv6)
     put("disableSystemIpv6", disableSystemIpv6)
     put("enableLocalDns", enableLocalDns)
@@ -94,6 +94,9 @@ private fun AsteriskdNetworkConfig.toJsonObject(): JsonObject = buildJsonObject 
     put("proxyPrivateCidrs", proxyPrivateCidrs.toJsonArray())
     put("bypassPrivateCidrs", bypassPrivateCidrs.toJsonArray())
     put("appPolicy", appPolicy.toJsonObject())
+    // Optional keys: omitted when off so the default document matches upstream asteriskd.
+    if (captureBoundNetworks) put("captureBoundNetworks", true)
+    if (blockEncryptedDns) put("blockEncryptedDns", true)
 }
 
 private fun AsteriskdAppPolicy.toJsonObject(): JsonObject = buildJsonObject {

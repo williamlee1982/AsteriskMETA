@@ -7,12 +7,14 @@ import app.ServiceControlSettings
 import engine.network.TailnetIpv4Cidr
 import engine.network.cidrContainsAddress
 import engine.root.daemon.config.AsteriskdConfig
+import engine.root.daemon.config.AsteriskdConfigEncoder
 import engine.root.daemon.config.AsteriskdMode
 import engine.root.daemon.config.AsteriskdModeOptions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 /**
  * ROOT transparent routing for Tailnet peers. A YAML `IP-CIDR,100.64.0.0/10,...` rule alone is
@@ -75,6 +77,22 @@ class RootTailnetPrivateRoutingTest {
         assertEquals(Route.Bypass, network.routeFor(CarrierCgnatAddress))
         assertEquals(Route.Proxy, network.routeFor(PeerIpv6Address))
         assertEquals(Route.AppPolicy, network.routeFor(PublicAddress))
+    }
+
+    /**
+     * The real builder: asteriskd's native tests (tests/runtime_test.c, tailnet_fixture_*) parse
+     * this exact document with the daemon's config parser and check the emitted rule order, so
+     * the precedence asserted above is verified against the actual iptables emitter.
+     */
+    @Test
+    fun encodedTproxyConfigMatchesTheNativeTailnetFixture() {
+        val encoded = AsteriskdConfigEncoder.encode(buildConfig(AsteriskdMode.Tproxy, enableIpv6 = true))
+        val fixture = File(NativeTailnetFixturePath)
+        if (!fixture.isFile || fixture.readText().trim() != encoded.trim()) {
+            File("build/tailnet-tproxy.actual.json").apply { parentFile.mkdirs() }.writeText(encoded)
+        }
+        assertTrue("native fixture missing: ${fixture.absolutePath}", fixture.isFile)
+        assertEquals(fixture.readText().trim(), encoded.trim())
     }
 
     @Test
@@ -145,5 +163,6 @@ class RootTailnetPrivateRoutingTest {
         const val CarrierCgnatAddress = "100.72.1.1"
         const val PublicAddress = "1.1.1.1"
         const val HomeDirectory = "/data/user/0/example.app/files/clash"
+        const val NativeTailnetFixturePath = "../asteriskd/src/main/native/tests/fixtures/tailnet-tproxy.json"
     }
 }
