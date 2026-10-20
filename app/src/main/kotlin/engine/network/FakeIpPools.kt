@@ -9,10 +9,14 @@ const val DefaultFakeIpIpv4Pool = "198.18.0.0/15"
 fun String.withoutIpv6FakeIpPool(): String =
     if (':' in this) DefaultFakeIpIpv4Pool else this
 
-/** The existing ROOT contract accepts IPv4 pools with prefixes /1 through /30. */
+/**
+ * The ROOT contract accepts IPv4 pools with prefixes /1 through /30, but Mihomo reserves the
+ * network, gateway and the next two addresses, so /30 leaves no usable FakeIP address: cap at /29.
+ * Pools intersecting the Tailnet CGNAT range are rejected as well.
+ */
 fun isValidFakeIpIpv4Pool(value: String): Boolean {
     val cidr = parseCidrAddressOrNull(value) ?: return false
-    return isIpv4Address(cidr.address) && cidr.prefixLength in 1..30
+    return isIpv4Address(cidr.address) && cidr.prefixLength in 1..29 && !fakeIpPoolOverlapsTailnet(value)
 }
 
 fun String.normalizedFakeIpIpv4Pool(): String {
