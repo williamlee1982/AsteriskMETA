@@ -181,6 +181,73 @@ with overrides disabled it always uses the raw profile. Provider members still r
 This fix stays in META's Mihomo adapter; AsteriskBOX and AsteriskNG checkouts are not present in
 this workspace, so no sibling implementation was changed.
 
+## 入站转发 (Inbound forwarding)
+
+Inbound forwarding is an opt-in, TCP-only way for another device on the Tailnet to reach a
+service listening on the phone. It requires an inbound-capable core (`v1.19.32-android.5-tailscale.4`
+or newer); this app branch still pins `tailscale.3` until that core is released.
+
+Declare forwards on a **top-level** `type: tailscale` outbound. The app does not invent targets or
+ports, and invalid entries remain visible on the Tailnet card for diagnosis:
+
+```yaml
+proxies:
+  - name: TS
+    type: tailscale
+    hostname: example-phone
+    state-dir: ./tailscale-example
+    inbound-forwards:
+      - name: ssh
+        listen: 20022
+        target: 127.0.0.1:8022
+      - name: adb
+        network: tcp
+        listen: 20555
+        target: 127.0.0.1:5555
+```
+
+The same keys can be added by the profile's override script. The script result is what the app
+uses for the card and for the runtime profile:
+
+```javascript
+function main(config) {
+  const ts = config.proxies.find(p => p.name === 'TS' && p.type === 'tailscale');
+  if (ts) ts['inbound-forwards'] = [
+    { name: 'ssh', listen: 20022, target: '127.0.0.1:8022' }
+  ];
+  return config;
+}
+```
+
+On the Home Tailnet card, enable **启用转发（一直在线） / Enable forwarding (always online)**
+to pass the declarations to the active core. It is off by default and changing it reloads the
+running profile. With the toggle off, or in the standby core, `inbound-forwards` is stripped so
+the Tailscale identity remains lazy. The switch is available only when the effective profile has
+a top-level Tailscale outbound with forwards. Keeping it on keeps tsnet online and uses additional
+battery/data even when no peer is connected.
+
+Forwarding is exposed to the whole Tailnet. Restrict the destination port in the Tailnet ACL;
+for example, adapt this generic grant to the users and tags in your policy:
+
+```json
+{
+  "grants": [
+    { "src": ["group:operators"], "dst": ["tag:phone:20022"] }
+  ]
+}
+```
+
+The default ACL may allow every Tailnet device and shared user. Keep the forwarded service's own
+authentication enabled. For SSH, run an sshd bound to `127.0.0.1:8022` and use key authentication;
+for ADB, enable a TCP listener on `127.0.0.1:5555` and keep Android's RSA confirmation. The app
+does not configure sshd, adbd, ACLs, or a standalone Tailscale app identity. Android Doze or a
+force-stop also stops the forwards.
+
+The card reports each `listen → target` row, listener state, active/total connections, and a
+copyable Tailnet address from MagicDNS or the first IPv4 address. A core without the status field
+is reported as unsupported rather than as an empty list. Proxy-provider members are displayed by
+the status API but are not started for inbound forwarding in v1.
+
 ## Known limitations
 
 * The DNS defaults below (`asterisk-tailnet-dns`) are computed from the profile file, so a
@@ -196,7 +263,6 @@ this workspace, so no sibling implementation was changed.
 
 ## P2 plan (not implemented)
 
-* Inbound: evaluate `tsnet.Server.Listen()`/`ListenTLS()` port forwarding into Android loopback with
-  a shared TS identity, opt-in per port, Tailnet ACL guidance; review the archived
-  `fl0w1nd/mihomo-tailscale` code for licensing and design only. This is not a full L3 interface.
+* Inbound forwarding currently supports TCP listeners to IP-literal targets only. UDP, TLS
+  termination, and the in-app forward editor remain out of scope for this phase.
 * Device list and exit-node management only after typed interfaces exist.
