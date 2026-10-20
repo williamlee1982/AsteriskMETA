@@ -153,6 +153,42 @@ class TailscaleStatusTest {
     }
 
     @Test
+    fun parsesInboundForwardStatesAndRedactsErrors() {
+        val outbound = parseTailscaleCoreStatuses(
+            """
+            {"outbounds":[{"name":"ts","state":"Running","tailnetIps":["100.101.102.103"],
+              "inboundForwards":[
+                {"name":"ssh","network":"tcp","listen":20022,"target":"127.0.0.1:22","state":"Listening","activeConns":1,"totalConns":2},
+                {"name":"bad","network":"tcp","listen":20023,"target":"127.0.0.1:23","state":"Error","error":"secret https://login.example.test/a/0123456789abcdef","activeConns":0,"totalConns":1},
+                {"name":"wait","network":"tcp","listen":20024,"target":"127.0.0.1:24","state":"Waiting"}
+              ]}]}
+            """.trimIndent(),
+        ).single()
+        val running = outbound.state as TailscaleBackendState.Running
+        assertEquals(3, running.inboundForwards?.size)
+        assertEquals(TailscaleInboundForwardState.Listening, running.inboundForwards?.get(0)?.state)
+        assertEquals(TailscaleInboundForwardState.Waiting, running.inboundForwards?.get(2)?.state)
+        assertFalse(running.inboundForwards?.get(1)?.error.orEmpty().contains("0123456789abcdef"))
+        assertEquals(1, running.inboundForwards?.get(0)?.activeConns)
+    }
+
+    @Test
+    fun missingInboundForwardFieldMeansUnsupportedCore() {
+        val running = parseTailscaleCoreStatuses(
+            """{"outbounds":[{"name":"ts","state":"Running"}]}""",
+        ).single().state as TailscaleBackendState.Running
+        assertNull(running.inboundForwards)
+    }
+
+    @Test
+    fun unknownInboundForwardStateMapsToError() {
+        val running = parseTailscaleCoreStatuses(
+            """{"outbounds":[{"name":"ts","state":"Running","inboundForwards":[{"listen":20022,"target":"127.0.0.1:22","state":"Later"}]}]}""",
+        ).single().state as TailscaleBackendState.Running
+        assertEquals(TailscaleInboundForwardState.Error, running.inboundForwards?.single()?.state)
+    }
+
+    @Test
     fun duplicateCoreEntriesAreReportedOnce() {
         val outbounds = parseTailscaleCoreStatuses(
             """{"outbounds":[{"name":"ts","state":"Idle"},{"name":"ts","state":"Running"},{"name":"ts","state":"Idle","provider":"p"}]}""",

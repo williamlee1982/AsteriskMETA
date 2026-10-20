@@ -1084,4 +1084,16 @@
     <string name="tailnet_root_broad_override">宽范围覆盖 %1$s 会同时代理非 Tailnet 的运营商 CGNAT 流量</string>
     <string name="tailnet_outbound_provider">来自代理集合：%1$s</string>
     <string name="tailnet_profile_fallback">核心未提供正在运行的配置，以下内容读取自配置文件。代理运行后会列出来自代理集合和覆写脚本的出站。</string>
+    <string name="tailnet_inbound_forwards_title">入站转发</string>
+    <string name="tailnet_inbound_forwards_toggle">启用转发（一直在线）</string>
+    <string name="tailnet_inbound_forwards_hint">请在配置文件或覆写脚本的顶层 tailscale 出站中声明 inbound-forwards。</string>
+    <string name="tailnet_inbound_forwards_unsupported">当前核心不支持入站转发，请更新应用/核心。</string>
+    <string name="tailnet_inbound_forwards_acl">请在 Tailnet ACL 策略中限制入站端口访问。</string>
+    <string name="tailnet_inbound_forward_state_listening">监听中</string>
+    <string name="tailnet_inbound_forward_state_waiting">等待登录</string>
+    <string name="tailnet_inbound_forward_state_error">错误：%1$s</string>
+    <string name="tailnet_inbound_forward_state_not_running">未运行</string>
+    <string name="tailnet_inbound_forward_connections">连接：%1$d 活跃 · %2$d 总计</string>
+    <string name="tailnet_inbound_forward_address">可访问地址：%1$s</string>
+    <string name="tailnet_inbound_forward_invalid">无效：%1$s</string>
 </resources>

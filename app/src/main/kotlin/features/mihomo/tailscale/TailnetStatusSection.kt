@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import app.AppState
 import app.LocalAppServices
+import app.LocalUpdateAppState
 import app.R
 import engine.mihomo.mihomoHomeDirectory
 import engine.mihomo.runtime.MihomoRuntimeRepository
@@ -97,6 +98,7 @@ internal fun TailnetStatusSection(
     val services = LocalAppServices.current
     val context = LocalContext.current
     val latestAppState by rememberUpdatedState(appState)
+    val updateAppState = LocalUpdateAppState.current
     val actions = remember(services.mihomoRuntime, statusState) {
         RepositoryTailnetControlActions(services.mihomoRuntime, statusState) { latestAppState }
     }
@@ -105,7 +107,7 @@ internal fun TailnetStatusSection(
     val scope = rememberCoroutineScope()
     val statuses = statusState.statuses
 
-    val presentation = remember(card, appState.runMode, appState.privateAddressCidrs, statuses) {
+    val presentation = remember(card, appState.runMode, appState.privateAddressCidrs, statuses, appState.tailnetInboundForwardsEnabled) {
         buildTailnetStatusPresentation(
             card = card,
             runMode = appState.runMode,
@@ -113,6 +115,7 @@ internal fun TailnetStatusSection(
             mihomoHomeDirectory = mihomoHomeDirectory(context.applicationContext.filesDir).absolutePath,
             ownPackageName = context.packageName,
             statuses = statuses,
+            inboundForwardsEnabled = appState.tailnetInboundForwardsEnabled,
         )
     }
 
@@ -120,6 +123,15 @@ internal fun TailnetStatusSection(
     TailnetStatusCard(
         presentation = presentation,
         modifier = modifier,
+        inboundForwardsEnabled = appState.tailnetInboundForwardsEnabled,
+        inboundForwardsAvailable = tailnetInboundForwardsAvailable(card),
+        onInboundForwardsEnabledChange = { enabled ->
+            val nextState = latestAppState.copy(tailnetInboundForwardsEnabled = enabled)
+            updateAppState { it.copy(tailnetInboundForwardsEnabled = enabled) }
+            if (nextState.proxyRunning) {
+                scope.launch { services.mihomoRuntime.reloadInteractiveProfileFromDisk(nextState) }
+            }
+        },
         busyOutbound = busyOutbound,
         onLogIn = { outbound ->
             if (busyOutbound != null) return@TailnetStatusCard

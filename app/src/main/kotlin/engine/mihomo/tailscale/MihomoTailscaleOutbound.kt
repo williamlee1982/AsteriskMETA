@@ -26,6 +26,7 @@ internal data class MihomoTailscaleOutbound(
     val provider: String? = null,
     /** The running core reported [stateDir] as Mihomo's implicit default directory. */
     val stateDirIsDefault: Boolean = false,
+    val inboundForwards: List<TailnetInboundForward> = emptyList(),
 ) {
     val key: TailnetOutboundKey get() = TailnetOutboundKey(name, provider)
 }
@@ -48,7 +49,44 @@ internal fun Map<*, *>.mihomoTailscaleOutbounds(): List<MihomoTailscaleOutbound>
             ephemeral = proxy["ephemeral"] == true,
             usesCustomControlUrl = proxy.stringOrNull("control-url") != null,
             controlUrlHost = proxy.stringOrNull("control-url")?.controlUrlHostOrNull(),
+            inboundForwards = proxy.inboundForwards(),
         )
+    }
+}
+
+private fun Map<*, *>.inboundForwards(): List<TailnetInboundForward> {
+    if (!containsKey("inbound-forwards")) return emptyList()
+    val entries = this["inbound-forwards"] as? List<*>
+        ?: return listOf(
+            TailnetInboundForward(
+                name = "inbound-forwards",
+                network = "tcp",
+                listen = 0,
+                target = "",
+                error = "inbound-forwards must be a list",
+            ),
+        )
+    return entries.mapIndexed { index, raw ->
+        val value = raw as? Map<*, *>
+        if (value == null) {
+            return@mapIndexed TailnetInboundForward("entry-$index", "tcp", 0, "", "inbound-forwards entry $index must be an object")
+        }
+        val listenRaw = value["listen"]
+        val listen = when (listenRaw) {
+            is Number -> listenRaw.toInt().takeIf { listenRaw.toDouble() == it.toDouble() }
+            is String -> listenRaw.trim().toIntOrNull()
+            else -> null
+        }
+        val target = (value["target"] as? String)?.trim().orEmpty()
+        val network = (value["network"] as? String)?.trim()?.ifEmpty { "tcp" } ?: "tcp"
+        val name = (value["name"] as? String)?.trim()?.takeIf(String::isNotEmpty) ?: listen?.toString() ?: "entry-$index"
+        val errors = buildList {
+            if (listen == null) add("listen must be an integer")
+            else if (listen !in 1..65535) add("listen must be between 1 and 65535")
+            if (target.isEmpty()) add("target is required")
+            if (network.lowercase() != "tcp") add("network must be tcp")
+        }
+        TailnetInboundForward(name, network, listen ?: 0, target, errors.takeIf { it.isNotEmpty() }?.joinToString("; "))
     }
 }
 

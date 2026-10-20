@@ -7,6 +7,9 @@ import app.modes.RunModeBpf2Socks
 import app.modes.RunModeTproxy
 import app.modes.RunModeTun2Socks
 import engine.mihomo.tailscale.TailnetOutboundKey
+import engine.mihomo.tailscale.TailnetInboundForward
+import engine.mihomo.tailscale.TailscaleInboundForwardState
+import engine.mihomo.tailscale.TailscaleInboundForwardStatus
 import engine.mihomo.tailscale.TailscaleBackendState
 import engine.mihomo.tailscale.TailscaleStateDirIssue
 import engine.mihomo.tailscale.TailscaleStatusQuery
@@ -24,11 +27,43 @@ internal data class TailnetOutboundPresentation(
     val stateDirIssues: List<TailscaleStateDirIssue>,
     val allowedLoginHosts: Set<String> = emptySet(),
     val source: TailnetOutboundSource = TailnetOutboundSource.RunningCore,
+    val inboundForwards: List<TailnetInboundForwardPresentation> = emptyList(),
+    val inboundNotice: TailnetInboundNotice? = null,
 ) {
     val name: String get() = key.name
     val provider: String? get() = key.provider
     val action: TailnetOutboundAction get() = tailnetOutboundAction(status)
 }
+
+internal enum class TailnetInboundPresentationState { Listening, Waiting, Error, NotRunning, Invalid }
+
+internal enum class TailnetInboundNotice { UnsupportedCore }
+
+internal data class TailnetInboundTogglePresentation(
+    val enabled: Boolean,
+    val available: Boolean,
+)
+
+internal fun tailnetInboundTogglePresentation(enabled: Boolean, hasForwards: Boolean): TailnetInboundTogglePresentation =
+    TailnetInboundTogglePresentation(enabled = enabled && hasForwards, available = hasForwards)
+
+/** The toggle controls only top-level effective outbounds; provider members are not reconciled. */
+internal fun tailnetInboundForwardsAvailable(card: TailnetCardOutbounds): Boolean =
+    card.outbounds.any { it.outbound.provider == null && it.outbound.inboundForwards.isNotEmpty() }
+
+internal fun shouldReloadTailnetInboundToggle(proxyRunning: Boolean): Boolean = proxyRunning
+
+internal data class TailnetInboundForwardPresentation(
+    val name: String,
+    val network: String,
+    val listen: Int,
+    val target: String,
+    val state: TailnetInboundPresentationState,
+    val error: String? = null,
+    val activeConns: Int = 0,
+    val totalConns: Int = 0,
+    val address: String? = null,
+)
 
 /** The single user action offered for an outbound in its current state. */
 internal enum class TailnetOutboundAction { None, LogIn, LogOut }
@@ -61,6 +96,7 @@ internal data class TailnetStatusPresentation(
     val rootRouting: TailnetRootRoutingHint?,
     /** Set when the list comes from the profile file because the core cannot report it. */
     val profileFallback: TailscaleStatusUnavailableReason? = null,
+    val showAclHint: Boolean = false,
 ) {
     val visible: Boolean get() = outbounds.isNotEmpty()
 }
@@ -72,6 +108,7 @@ internal fun buildTailnetStatusPresentation(
     mihomoHomeDirectory: String,
     ownPackageName: String,
     statuses: TailscaleStatusQuery,
+    inboundForwardsEnabled: Boolean = false,
 ): TailnetStatusPresentation {
     if (card.outbounds.isEmpty()) return TailnetStatusPresentation(emptyList(), rootRouting = null)
     // Outbounds whose options are unknown get no state-dir findings rather than guessed ones.
@@ -86,6 +123,7 @@ internal fun buildTailnetStatusPresentation(
     } else {
         null
     }
+    val anyForward = card.outbounds.any { it.outbound.inboundForwards.isNotEmpty() }
     return TailnetStatusPresentation(
         outbounds = card.outbounds.map { entry ->
             val outbound = entry.outbound
@@ -96,11 +134,54 @@ internal fun buildTailnetStatusPresentation(
                 stateDirIssues = findings[outbound.key]?.issues.orEmpty().sortedBy { it.ordinal },
                 allowedLoginHosts = outbound.allowedLoginHosts(),
                 source = entry.source,
+                inboundForwards = entry.outbound.inboundForwards.map { forward ->
+                    forward.toPresentation(outboundState = statuses.resultFor(outbound.key), running = (statuses.resultFor(outbound.key) as? TailscaleStatusResult.Available)?.state as? TailscaleBackendState.Running)
+                },
+                inboundNotice = if (inboundForwardsEnabled && entry.outbound.inboundForwards.isNotEmpty() &&
+                    (statuses.resultFor(outbound.key) as? TailscaleStatusResult.Available)?.state is TailscaleBackendState.Running &&
+                    ((statuses.resultFor(outbound.key) as TailscaleStatusResult.Available).state as TailscaleBackendState.Running).inboundForwards == null
+                ) TailnetInboundNotice.UnsupportedCore else null,
             )
         },
         rootRouting = rootRouting,
         profileFallback = card.profileFallback,
+        showAclHint = anyForward,
     )
+}
+
+private fun TailnetInboundForward.toPresentation(
+    outboundState: TailscaleStatusResult,
+    running: TailscaleBackendState.Running?,
+): TailnetInboundForwardPresentation {
+    if (error != null) return TailnetInboundForwardPresentation(name, network, listen, target, TailnetInboundPresentationState.Invalid, error)
+    val status = running?.inboundForwards?.firstOrNull { it.listen == listen }
+    val state = when {
+        outboundState is TailscaleStatusResult.Available &&
+            (outboundState.state is TailscaleBackendState.NeedsLogin || outboundState.state == TailscaleBackendState.Starting) ->
+            TailnetInboundPresentationState.Waiting
+        outboundState !is TailscaleStatusResult.Available || running == null -> TailnetInboundPresentationState.NotRunning
+        status == null -> TailnetInboundPresentationState.NotRunning
+        status.state == TailscaleInboundForwardState.Listening -> TailnetInboundPresentationState.Listening
+        status.state == TailscaleInboundForwardState.Waiting -> TailnetInboundPresentationState.Waiting
+        else -> TailnetInboundPresentationState.Error
+    }
+    return TailnetInboundForwardPresentation(
+        name = name,
+        network = network,
+        listen = listen,
+        target = target,
+        state = state,
+        error = status?.error,
+        activeConns = status?.activeConns ?: 0,
+        totalConns = status?.totalConns ?: 0,
+        address = running?.reachableAddress(listen),
+    )
+}
+
+private fun TailscaleBackendState.Running.reachableAddress(listen: Int): String? {
+    val host = dnsName?.trim()?.removeSuffix(".")?.takeIf(String::isNotEmpty)
+        ?: tailnetAddresses.firstOrNull { it.matches(Regex("\\d{1,3}(?:\\.\\d{1,3}){3}")) }
+    return host?.let { "$it:$listen" }
 }
 
 private val PrivateAddressRootModes = setOf(RunModeTproxy, RunModeTun2Socks, RunModeBpf2Socks)

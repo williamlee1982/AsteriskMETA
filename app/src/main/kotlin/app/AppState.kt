@@ -62,6 +62,8 @@ data class AppState(
     val mihomoControlPort: String = DefaultMihomoControlPort.toString(),
     val mihomoControlSecret: String = "",
     val enableLocalDns: Boolean = true,
+    /** Keeps configured Tailscale inbound forwards online in the active core. */
+    val tailnetInboundForwardsEnabled: Boolean = false,
 
     val localProxyPort: String = VpnDefaults.LOCAL_PROXY_PORT.toString(),
     val enableDynamicLocalProxyPort: Boolean = false,

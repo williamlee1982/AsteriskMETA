@@ -22,11 +22,26 @@ internal sealed interface TailscaleBackendState {
         val hostname: String?,
         val dnsName: String? = null,
         val magicDnsSuffix: String? = null,
+        /** Null means the core predates inbound-forward status support. */
+        val inboundForwards: List<TailscaleInboundForwardStatus>? = null,
     ) : TailscaleBackendState
 
     /** Use [tailscaleBackendError] so the message is always redacted. */
     data class Error(val redactedMessage: String) : TailscaleBackendState
 }
+
+internal enum class TailscaleInboundForwardState { Listening, Waiting, Error }
+
+internal data class TailscaleInboundForwardStatus(
+    val name: String,
+    val network: String,
+    val listen: Int,
+    val target: String,
+    val state: TailscaleInboundForwardState,
+    val error: String? = null,
+    val activeConns: Int = 0,
+    val totalConns: Int = 0,
+)
 
 internal fun tailscaleBackendError(message: String): TailscaleBackendState.Error =
     TailscaleBackendState.Error(redactTailnetSecrets(message).take(MaxErrorMessageLength))
@@ -84,4 +99,4 @@ internal fun TailscaleStatusQuery.resultFor(outbound: TailnetOutboundKey): Tails
         ?: TailscaleStatusResult.Unavailable(TailscaleStatusUnavailableReason.NotInRunningConfig)
 }
 
-private const val MaxErrorMessageLength = 240
+internal const val MaxErrorMessageLength = 240

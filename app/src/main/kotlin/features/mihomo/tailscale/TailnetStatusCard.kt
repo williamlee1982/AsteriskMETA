@@ -5,13 +5,19 @@ package features.mihomo.tailscale
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -32,18 +38,38 @@ internal fun TailnetStatusCard(
     busyOutbound: TailnetOutboundKey? = null,
     onLogIn: (TailnetOutboundPresentation) -> Unit = {},
     onLogOut: (TailnetOutboundPresentation) -> Unit = {},
+    inboundForwardsEnabled: Boolean = false,
+    inboundForwardsAvailable: Boolean = false,
+    onInboundForwardsEnabledChange: (Boolean) -> Unit = {},
 ) {
     AsteriskPageCard(modifier = modifier) {
         Column(
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = stringResource(R.string.tailnet_card_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = stringResource(R.string.tailnet_card_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(stringResource(R.string.tailnet_inbound_forwards_toggle), style = MaterialTheme.typography.labelMedium)
+                Spacer(Modifier.width(8.dp))
+                Switch(
+                    checked = inboundForwardsEnabled,
+                    enabled = inboundForwardsAvailable,
+                    onCheckedChange = onInboundForwardsEnabledChange,
+                )
+            }
+            if (!inboundForwardsAvailable) {
+                Text(
+                    text = stringResource(R.string.tailnet_inbound_forwards_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             if (presentation.profileFallback != null) {
                 Text(
                     text = stringResource(R.string.tailnet_profile_fallback),
@@ -64,6 +90,13 @@ internal fun TailnetStatusCard(
             presentation.rootRouting?.let { hint ->
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 TailnetRootRoutingRow(hint)
+            }
+            if (presentation.showAclHint) {
+                Text(
+                    text = stringResource(R.string.tailnet_inbound_forwards_acl),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -125,6 +158,38 @@ private fun TailnetOutboundRow(
                     MaterialTheme.colorScheme.error
                 },
             )
+        }
+        if (outbound.inboundForwards.isNotEmpty()) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Text(stringResource(R.string.tailnet_inbound_forwards_title), style = MaterialTheme.typography.labelLarge)
+            outbound.inboundNotice?.let {
+                Text(stringResource(R.string.tailnet_inbound_forwards_unsupported), color = MaterialTheme.colorScheme.error)
+            }
+            outbound.inboundForwards.forEach { forward ->
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("${forward.listen} → ${forward.target}", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        text = when (forward.state) {
+                            TailnetInboundPresentationState.Listening -> stringResource(R.string.tailnet_inbound_forward_state_listening)
+                            TailnetInboundPresentationState.Waiting -> stringResource(R.string.tailnet_inbound_forward_state_waiting)
+                            TailnetInboundPresentationState.Error -> stringResource(R.string.tailnet_inbound_forward_state_error, forward.error.orEmpty())
+                            TailnetInboundPresentationState.NotRunning -> stringResource(R.string.tailnet_inbound_forward_state_not_running)
+                            TailnetInboundPresentationState.Invalid -> stringResource(R.string.tailnet_inbound_forward_invalid, forward.error.orEmpty())
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (forward.state == TailnetInboundPresentationState.Error || forward.state == TailnetInboundPresentationState.Invalid) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(stringResource(R.string.tailnet_inbound_forward_connections, forward.activeConns, forward.totalConns), style = MaterialTheme.typography.bodySmall)
+                    forward.address?.let { address ->
+                        SelectionContainer {
+                            Text(
+                                stringResource(R.string.tailnet_inbound_forward_address, address),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                }
+            }
         }
         TailnetOutboundActionButton(outbound.action, busy, actionsEnabled, onLogIn, onLogOut)
     }
