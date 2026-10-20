@@ -163,7 +163,7 @@ private object QuickJsMihomoProfileScriptDebugEngine : MihomoProfileScriptDebugE
     }
 }
 
-private object QuickJsMihomoProfileScriptEngine : MihomoProfileScriptEngine {
+internal object QuickJsMihomoProfileScriptEngine : MihomoProfileScriptEngine {
     override fun evaluate(script: String): String {
         return runBlocking(Dispatchers.Default) {
             quickJs {

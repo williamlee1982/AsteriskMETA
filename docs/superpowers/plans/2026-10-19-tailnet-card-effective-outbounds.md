@@ -35,10 +35,10 @@
 - Possibly extract helper under `engine/mihomo/` or `features/mihomo/tailscale/` for testability
 - Reuse: `applyMihomoProfileScriptOverride`, `parseMihomoTailscaleOutbounds` / map `mihomoTailscaleOutbounds()`
 
-- [ ] Implement minimal code to pass tests (apply script before parse; on script error fall back to raw).
-- [ ] Wire `selectedProfile`, `appState.mihomoOverrideScripts`, and content hash / script id into produceState keys so script edits refresh the list.
-- [ ] Run unit tests GREEN.
-- [ ] Commit.
+- [x] Implement minimal code to pass tests (apply script before parse; on script error fall back to raw).
+- [x] Wire `selectedProfile`, `appState.mihomoOverrideScripts`, and content hash / script id into produceState keys so script edits refresh the list.
+- [x] Run unit tests GREEN.
+- [x] Commit.
 
 ## Task 3: Verify presentation still surfaces reasons
 
