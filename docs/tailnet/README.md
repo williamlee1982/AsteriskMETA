@@ -168,10 +168,19 @@ providers and override scripts are shown and follow provider refreshes (the card
   core-reported resolved directory; outbounds whose options are unknown (older core builds, for
   provider members) get none. VPN mode uses JNI, ROOT modes the controller, as before.
 
+The dashboard's fallback uses the selected profile **after its bound override script**, in the
+same order as runtime and MagicDNS preparation. Script-only tailscale outbounds therefore keep
+the card visible when the status API is unavailable, with the existing fallback notice and
+concrete unavailable reason. Profile content, profile selection, script binding and script edits
+refresh the fallback. If applying the script fails, the dashboard safely parses the raw profile;
+with overrides disabled it always uses the raw profile. Provider members still require core status.
+This fix stays in META's Mihomo adapter; AsteriskBOX and AsteriskNG checkouts are not present in
+this workspace, so no sibling implementation was changed.
+
 ## Known limitations
 
 * The DNS defaults below (`asterisk-tailnet-dns`) are computed from the profile file, so a
-  tailscale outbound that only a proxy provider or an override script adds gets no default
+  tailscale outbound that only a proxy provider adds gets no default
   MagicDNS policy (`asterisk-tailnet-dns.outbound` must name a top-level outbound); add the
   `nameserver-policy` entry and `DOMAIN-SUFFIX` rule in the profile or the override instead.
 * ROOT-created state is root-owned; switching the same identity to VPN mode may fail to read it.

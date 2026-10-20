@@ -78,8 +78,8 @@ import engine.mihomo.raw.MihomoRawConfigParser
 import engine.mihomo.runtime.MihomoTrafficSample
 import engine.mihomo.runtime.MihomoTrafficState
 import engine.mihomo.selectedMihomoProfileOrNull
+import engine.mihomo.effectiveMihomoTailscaleOutbounds
 import engine.mihomo.tailscale.MihomoTailscaleOutbound
-import engine.mihomo.tailscale.parseMihomoTailscaleOutbounds
 import features.home.HomeControllerState
 import features.home.HomeMonitoringOverviewState
 import features.home.HomeNetworkActivityState
@@ -219,14 +219,16 @@ fun MihomoDashboardPage(
     }
     val tailscaleOutbounds by produceState<List<MihomoTailscaleOutbound>>(
         initialValue = emptyList(),
-        key1 = selectedProfile?.id,
-        key2 = selectedProfile?.contentSha256,
+        key1 = selectedProfile,
+        key2 = appState.mihomoOverrideScripts,
     ) {
         value = if (selectedProfile?.hasContent == true) {
             withContext(Dispatchers.IO) {
                 runCatching {
-                    parseMihomoTailscaleOutbounds(
+                    effectiveMihomoTailscaleOutbounds(
                         services.mihomoProfileContentStore.readBytes(selectedProfile).toString(Charsets.UTF_8),
+                        selectedProfile,
+                        appState.mihomoOverrideScripts,
                     )
                 }.getOrDefault(emptyList())
             }
