@@ -78,8 +78,8 @@ import engine.mihomo.raw.MihomoRawConfigParser
 import engine.mihomo.runtime.MihomoTrafficSample
 import engine.mihomo.runtime.MihomoTrafficState
 import engine.mihomo.selectedMihomoProfileOrNull
-import engine.mihomo.tailscale.MihomoTailscaleOutbound
 import engine.mihomo.effectiveMihomoTailscaleOutbounds
+import engine.mihomo.tailscale.MihomoTailscaleOutbound
 import features.home.HomeControllerState
 import features.home.HomeMonitoringOverviewState
 import features.home.HomeNetworkActivityState

@@ -14,7 +14,7 @@ internal enum class TailnetOutboundSource {
     /** Reported by the running core: includes proxy providers and override scripts. */
     RunningCore,
 
-    /** Read from the selected profile file: top-level `proxies` only. */
+    /** Read from the selected profile after its bound override script: top-level `proxies` only. */
     ProfileFile,
 }
 
@@ -37,7 +37,7 @@ internal data class TailnetCardOutbounds(
  * While the core reports its outbounds, its effective list is authoritative: proxy-provider
  * members and outbounds added by override scripts are included and the list follows provider
  * refreshes on the next poll. Top-level profile outbounds the core does not run are kept so the
- * card can say they are not in the running configuration. Otherwise the profile file is the
+ * card can say they are not in the running configuration. Otherwise the effective profile is the
  * fallback and [TailnetCardOutbounds.profileFallback] says why.
  */
 internal fun resolveTailnetCardOutbounds(

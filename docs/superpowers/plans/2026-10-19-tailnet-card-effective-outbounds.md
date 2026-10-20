@@ -45,9 +45,9 @@
 **Files:**
 - Check: `TailnetStatusCard.kt`, `TailnetStatusPresentationTest.kt`, strings for CoreApiMissing / QueryFailed / ProxyNotRunning
 
-- [ ] Confirm Unavailable + non-empty effective list shows card + reason banner (existing UI).
-- [ ] Add/adjust presentation test only if a gap appears.
-- [ ] Commit.
+- [x] Confirm Unavailable + non-empty effective list shows card + reason banner (existing UI).
+- [x] Add/adjust presentation test only if a gap appears.
+- [x] Commit.
 
 ## Task 4: Docs + PR
 

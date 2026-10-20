@@ -65,6 +65,11 @@ class EffectiveTailnetOutboundsTest {
     @Test
     fun disabledUnboundOrBlankScriptsKeepTheRawProfile() {
         val raw = "proxies: [{ name: raw, type: tailscale }]"
+        var evaluations = 0
+        val engine = MihomoProfileScriptEngine {
+            evaluations++
+            """{"proxies":[]}"""
+        }
         for ((selected, scripts) in listOf(
             profile.copy(disableOverrides = true) to listOf(script),
             profile.copy(overrideScriptId = 0) to listOf(script),
@@ -73,9 +78,10 @@ class EffectiveTailnetOutboundsTest {
         )) {
             assertEquals(
                 listOf("raw"),
-                effectiveMihomoTailscaleOutbounds(raw, selected, scripts, mustNotEvaluate).map { it.name },
+                effectiveMihomoTailscaleOutbounds(raw, selected, scripts, engine).map { it.name },
             )
         }
+        assertEquals(0, evaluations)
     }
 
     @Test

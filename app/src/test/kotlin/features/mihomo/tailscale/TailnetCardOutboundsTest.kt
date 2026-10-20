@@ -12,6 +12,7 @@ import engine.mihomo.tailscale.TailnetOutboundKey
 import engine.mihomo.tailscale.TailscaleBackendState
 import engine.mihomo.tailscale.TailscaleCoreOutbound
 import engine.mihomo.tailscale.TailscaleStatusQuery
+import engine.mihomo.tailscale.TailscaleStatusResult
 import engine.mihomo.tailscale.TailscaleStatusUnavailableReason
 import engine.mihomo.tailscale.coreStates
 import engine.mihomo.tailscale.tailnetOutbound
@@ -54,7 +55,10 @@ class TailnetCardOutboundsTest {
             )
             assertTrue(presentation.visible)
             assertEquals(reason, presentation.profileFallback)
-            assertEquals(reason, (presentation.outbounds.single().status as engine.mihomo.tailscale.TailscaleStatusResult.Unavailable).reason)
+            assertEquals(
+                TailscaleStatusResult.Unavailable(reason),
+                presentation.outbounds.single().status,
+            )
         }
     }
 
