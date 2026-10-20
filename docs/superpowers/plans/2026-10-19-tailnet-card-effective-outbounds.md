@@ -1,6 +1,6 @@
 # Tailnet card effective-config fallback Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Home Tailnet card uses profile+override-script effective outbounds as fallback so script-added TS stays visible when status API fails.
 
@@ -52,5 +52,5 @@
 ## Task 4: Docs + PR
 
 - [x] Short note in `docs/tailnet/README.md` or REGRESSION_CHECKLIST: card uses effective config fallback.
-- [ ] Open PR to `main` on williamlee1982/AsteriskMETA.
-- [ ] Write `/workspace/asterisk-task/REPORT-tailnet-card-effective.md` with summary, test commands, PR URL, and which superpowers skills were used.
+- [x] Open PR to `main` on williamlee1982/AsteriskMETA.
+- [x] Write `/workspace/asterisk-task/REPORT-tailnet-card-effective.md` with summary, test commands, PR URL, and which superpowers skills were used.
