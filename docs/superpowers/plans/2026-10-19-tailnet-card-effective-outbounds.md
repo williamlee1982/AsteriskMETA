@@ -51,6 +51,6 @@
 
 ## Task 4: Docs + PR
 
-- [ ] Short note in `docs/tailnet/README.md` or REGRESSION_CHECKLIST: card uses effective config fallback.
+- [x] Short note in `docs/tailnet/README.md` or REGRESSION_CHECKLIST: card uses effective config fallback.
 - [ ] Open PR to `main` on williamlee1982/AsteriskMETA.
 - [ ] Write `/workspace/asterisk-task/REPORT-tailnet-card-effective.md` with summary, test commands, PR URL, and which superpowers skills were used.
