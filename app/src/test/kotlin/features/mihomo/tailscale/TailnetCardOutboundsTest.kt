@@ -14,6 +14,7 @@ import engine.mihomo.tailscale.TailscaleCoreOutbound
 import engine.mihomo.tailscale.TailscaleStatusQuery
 import engine.mihomo.tailscale.TailscaleStatusResult
 import engine.mihomo.tailscale.TailscaleStatusUnavailableReason
+import engine.mihomo.tailscale.TailnetInboundForward
 import engine.mihomo.tailscale.coreStates
 import engine.mihomo.tailscale.tailnetOutbound
 import org.junit.Assert.assertEquals
@@ -93,6 +94,19 @@ class TailnetCardOutboundsTest {
         )
         assertEquals("/home/clash/effective", card.outbounds.single().outbound.stateDir)
         assertEquals(TailnetOutboundSource.RunningCore, card.outbounds.single().source)
+    }
+
+    @Test
+    fun runningCoreConfigKeepsProfileInboundForwardsWhenSummaryOmitsThem() {
+        val profile = tailnetOutbound("ts", stateDir = "./from-file").copy(
+            inboundForwards = listOf(TailnetInboundForward("ssh", "tcp", 20022, "127.0.0.1:8022")),
+        )
+        val card = resolveTailnetCardOutbounds(
+            core(reported("ts", stateDir = "/home/clash/effective")),
+            profileOutbounds = listOf(profile),
+        )
+        assertEquals("/home/clash/effective", card.outbounds.single().outbound.stateDir)
+        assertEquals(profile.inboundForwards, card.outbounds.single().outbound.inboundForwards)
     }
 
     @Test
