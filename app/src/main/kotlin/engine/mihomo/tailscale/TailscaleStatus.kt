@@ -40,7 +40,7 @@ internal data class TailscaleInboundForwardStatus(
     val state: TailscaleInboundForwardState,
     val error: String? = null,
     val activeConns: Int = 0,
-    val totalConns: Int = 0,
+    val totalConns: Long = 0,
 )
 
 internal fun tailscaleBackendError(message: String): TailscaleBackendState.Error =
@@ -80,6 +80,11 @@ internal data class TailscaleCoreOutbound(
     val state: TailscaleBackendState,
     /** Effective, non-secret configuration; null when the core does not report it. */
     val config: MihomoTailscaleOutbound?,
+    /**
+     * Inbound-forward status in any backend state. Null when the core reports none: the
+     * outbound declares no forwards in the running config, or the core predates the feature.
+     */
+    val inboundForwards: List<TailscaleInboundForwardStatus>? = null,
 )
 
 /** One status poll of every tailscale outbound in the running core. */
@@ -90,6 +95,13 @@ internal sealed interface TailscaleStatusQuery {
     }
 
     data class Unavailable(val reason: TailscaleStatusUnavailableReason) : TailscaleStatusQuery
+}
+
+/** Inbound-forward status of [outbound] within this poll, or null when the core reports none. */
+internal fun TailscaleStatusQuery.inboundForwardsFor(outbound: TailnetOutboundKey): List<TailscaleInboundForwardStatus>? {
+    if (this !is TailscaleStatusQuery.Available) return null
+    val core = outbounds.firstOrNull { it.key == outbound } ?: return null
+    return core.inboundForwards ?: (core.state as? TailscaleBackendState.Running)?.inboundForwards
 }
 
 /** Status of [outbound] within this poll. */

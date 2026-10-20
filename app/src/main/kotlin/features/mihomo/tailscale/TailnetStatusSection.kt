@@ -33,6 +33,7 @@ import engine.mihomo.tailscale.TailscaleStatusQuery
 import engine.mihomo.tailscale.TailscaleStatusUnavailableReason
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -120,16 +121,38 @@ internal fun TailnetStatusSection(
     }
 
     val messages = TailnetMessages.resolve()
+    val restartFailedMessage = stringResource(R.string.tailnet_inbound_forwards_restart_failed)
+    var toggleBusy by remember { mutableStateOf(false) }
+    val toggle = tailnetInboundTogglePresentation(
+        enabled = appState.tailnetInboundForwardsEnabled,
+        hasForwards = tailnetInboundForwardsAvailable(card),
+        coreUnsupported = presentation.outbounds.any { it.inboundNotice == TailnetInboundNotice.UnsupportedCore },
+    )
     TailnetStatusCard(
         presentation = presentation,
         modifier = modifier,
-        inboundForwardsEnabled = appState.tailnetInboundForwardsEnabled,
-        inboundForwardsAvailable = tailnetInboundForwardsAvailable(card),
+        inboundForwardsEnabled = toggle.enabled,
+        inboundForwardsAvailable = toggle.available,
+        inboundForwardsBusy = toggleBusy,
         onInboundForwardsEnabledChange = { enabled ->
-            val nextState = latestAppState.copy(tailnetInboundForwardsEnabled = enabled)
-            updateAppState { it.copy(tailnetInboundForwardsEnabled = enabled) }
-            if (nextState.proxyRunning) {
-                scope.launch { services.mihomoRuntime.reloadInteractiveProfileFromDisk(nextState) }
+            if (toggleBusy) return@TailnetStatusCard
+            toggleBusy = true
+            val current = latestAppState
+            scope.launch {
+                try {
+                    applyTailnetInboundToggle(
+                        current = current,
+                        enabled = enabled,
+                        update = updateAppState,
+                        // App scope: the restart itself must finish even if the card leaves
+                        // composition (same pattern as restarting for a profile update).
+                        restart = { state -> services.appScope.async { services.proxyServiceUseCase.restart(state) }.await() },
+                        onFailure = { error -> services.tipNotifier.showError(error, restartFailedMessage) },
+                    )
+                } finally {
+                    toggleBusy = false
+                    statusState.refresh()
+                }
             }
         },
         busyOutbound = busyOutbound,

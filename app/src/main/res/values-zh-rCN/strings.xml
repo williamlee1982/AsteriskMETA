@@ -1091,6 +1091,9 @@
     <string name="tailnet_inbound_forwards_acl">请在 Tailnet ACL 策略中限制入站端口访问。</string>
     <string name="tailnet_inbound_forward_state_listening">监听中</string>
     <string name="tailnet_inbound_forward_state_waiting">等待登录</string>
+    <string name="tailnet_inbound_forward_state_waiting_node">等待节点上线</string>
+    <string name="tailnet_inbound_forward_dial_error">目标连接失败：%1$s</string>
+    <string name="tailnet_inbound_forwards_restart_failed">重启代理以应用入站转发失败</string>
     <string name="tailnet_inbound_forward_state_error">错误：%1$s</string>
     <string name="tailnet_inbound_forward_state_not_running">未运行</string>
     <string name="tailnet_inbound_forward_connections">连接：%1$d 活跃 · %2$d 总计</string>

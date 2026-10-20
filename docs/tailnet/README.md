@@ -220,10 +220,13 @@ function main(config) {
 ```
 
 On the Home Tailnet card, enable **启用转发（一直在线） / Enable forwarding (always online)**
-to pass the declarations to the active core. It is off by default and changing it reloads the
-running profile. With the toggle off, or in the standby core, `inbound-forwards` is stripped so
+to pass the declarations to the active core. It is off by default. Changing it while the proxy
+runs restarts the proxy (the runtime profile is regenerated; a plain reload would re-read the old
+one), and a failed restart is shown as an error toast. With the toggle off, or in the standby core, `inbound-forwards` is stripped so
 the Tailscale identity remains lazy. The switch is available only when the effective profile has
-a top-level Tailscale outbound with forwards. Keeping it on keeps tsnet online and uses additional
+a top-level Tailscale outbound with forwards, and it shows as off when there are none; if the core
+turns out not to support forwards, the switch can only be turned off. With overrides disabled the
+profile is passed to the core byte for byte unless a tailscale proxy declares `inbound-forwards`. Keeping it on keeps tsnet online and uses additional
 battery/data even when no peer is connected.
 
 Forwarding is exposed to the whole Tailnet. Restrict the destination port in the Tailnet ACL;
@@ -244,9 +247,17 @@ does not configure sshd, adbd, ACLs, or a standalone Tailscale app identity. And
 force-stop also stops the forwards.
 
 The card reports each `listen → target` row, listener state, active/total connections, and a
-copyable Tailnet address from MagicDNS or the first IPv4 address. A core without the status field
-is reported as unsupported rather than as an empty list. Proxy-provider members are displayed by
-the status API but are not started for inbound forwarding in v1.
+copyable Tailnet address from MagicDNS or the first IPv4 address. 「等待节点上线 / Waiting for the
+node」 means tsnet is still starting; 「等待登录 / Waiting for login」 appears only when the node needs
+a login. A listening forward whose last target dial failed shows 「目标连接失败：… / Target
+connection failed」. A core without the status field is reported as unsupported (in any backend
+state) rather than as an empty list. Proxy-provider members are not started for inbound
+forwarding; the card shows the core's 「unsupported in proxy providers」 row for them.
+
+`allow-lan-target: true` permits only private LAN targets (10/8, 172.16/12, 192.168/16,
+169.254/16, fc00::/7). Public, CGNAT (100.64/10) and IPv6 link-local targets fail the profile
+load. Give every tailscale proxy its own `state-dir`: a forwarding proxy sharing one with another
+proxy of the same profile is not started and shows `state-dir shared with …`.
 
 ## Known limitations
 
