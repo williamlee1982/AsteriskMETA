@@ -45,6 +45,15 @@ fun isTailnetAddress(address: String): Boolean {
     return (if (bits == 32) TailnetIpv4Range else TailnetIpv6Range).contains(cidr)
 }
 
+/**
+ * Returns true when the IPv4 FakeIP [pool] intersects the Tailnet CGNAT range. Such a pool would
+ * hand out fake addresses that ROOT modes bypass and shadow real Tailnet peer addresses.
+ */
+fun fakeIpPoolOverlapsTailnet(pool: String): Boolean {
+    val cidr = parseIpCidrOrNull(pool) ?: return false
+    return cidr.overlaps(TailnetIpv4Range)
+}
+
 /** Returns true when [cidr] fully contains [address]; both must be literal and the same family. */
 fun cidrContainsAddress(cidr: String, address: String): Boolean {
     val range = parseIpCidrOrNull(cidr) ?: return false
