@@ -40,6 +40,8 @@ internal fun TailnetStatusCard(
     onLogOut: (TailnetOutboundPresentation) -> Unit = {},
     inboundForwardsEnabled: Boolean = false,
     inboundForwardsAvailable: Boolean = false,
+    /** A restart applying the switch is in progress. */
+    inboundForwardsBusy: Boolean = false,
     onInboundForwardsEnabledChange: (Boolean) -> Unit = {},
 ) {
     AsteriskPageCard(modifier = modifier) {
@@ -59,7 +61,7 @@ internal fun TailnetStatusCard(
                 Spacer(Modifier.width(8.dp))
                 Switch(
                     checked = inboundForwardsEnabled,
-                    enabled = inboundForwardsAvailable,
+                    enabled = inboundForwardsAvailable && !inboundForwardsBusy,
                     onCheckedChange = onInboundForwardsEnabledChange,
                 )
             }
@@ -171,7 +173,8 @@ private fun TailnetOutboundRow(
                     Text(
                         text = when (forward.state) {
                             TailnetInboundPresentationState.Listening -> stringResource(R.string.tailnet_inbound_forward_state_listening)
-                            TailnetInboundPresentationState.Waiting -> stringResource(R.string.tailnet_inbound_forward_state_waiting)
+                            TailnetInboundPresentationState.WaitingForLogin -> stringResource(R.string.tailnet_inbound_forward_state_waiting)
+                            TailnetInboundPresentationState.WaitingForNode -> stringResource(R.string.tailnet_inbound_forward_state_waiting_node)
                             TailnetInboundPresentationState.Error -> stringResource(R.string.tailnet_inbound_forward_state_error, forward.error.orEmpty())
                             TailnetInboundPresentationState.NotRunning -> stringResource(R.string.tailnet_inbound_forward_state_not_running)
                             TailnetInboundPresentationState.Invalid -> stringResource(R.string.tailnet_inbound_forward_invalid, forward.error.orEmpty())
@@ -179,6 +182,13 @@ private fun TailnetOutboundRow(
                         style = MaterialTheme.typography.bodySmall,
                         color = if (forward.state == TailnetInboundPresentationState.Error || forward.state == TailnetInboundPresentationState.Invalid) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    forward.warning?.let { warning ->
+                        Text(
+                            stringResource(R.string.tailnet_inbound_forward_dial_error, warning),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                     Text(stringResource(R.string.tailnet_inbound_forward_connections, forward.activeConns, forward.totalConns), style = MaterialTheme.typography.bodySmall)
                     forward.address?.let { address ->
                         SelectionContainer {

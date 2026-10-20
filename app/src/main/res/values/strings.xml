@@ -1106,6 +1106,9 @@
     <string name="tailnet_inbound_forwards_acl">Restrict inbound ports in your Tailnet ACL policy.</string>
     <string name="tailnet_inbound_forward_state_listening">Listening</string>
     <string name="tailnet_inbound_forward_state_waiting">Waiting for login</string>
+    <string name="tailnet_inbound_forward_state_waiting_node">Waiting for the node to come online</string>
+    <string name="tailnet_inbound_forward_dial_error">Target connection failed: %1$s</string>
+    <string name="tailnet_inbound_forwards_restart_failed">Could not restart the proxy to apply inbound forwarding</string>
     <string name="tailnet_inbound_forward_state_error">Error: %1$s</string>
     <string name="tailnet_inbound_forward_state_not_running">Not running</string>
     <string name="tailnet_inbound_forward_connections">Connections: %1$d active · %2$d total</string>

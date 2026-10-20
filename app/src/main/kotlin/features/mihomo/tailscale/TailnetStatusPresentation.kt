@@ -17,6 +17,7 @@ import engine.mihomo.tailscale.TailscaleStatusResult
 import engine.mihomo.tailscale.TailscaleStatusUnavailableReason
 import engine.mihomo.tailscale.allowedLoginHosts
 import engine.mihomo.tailscale.diagnoseTailscaleStateDirs
+import engine.mihomo.tailscale.inboundForwardsFor
 import engine.mihomo.tailscale.resultFor
 import engine.network.tailnetPrivateAddressOverrides
 
@@ -35,7 +36,7 @@ internal data class TailnetOutboundPresentation(
     val action: TailnetOutboundAction get() = tailnetOutboundAction(status)
 }
 
-internal enum class TailnetInboundPresentationState { Listening, Waiting, Error, NotRunning, Invalid }
+internal enum class TailnetInboundPresentationState { Listening, WaitingForNode, WaitingForLogin, Error, NotRunning, Invalid }
 
 internal enum class TailnetInboundNotice { UnsupportedCore }
 
@@ -44,14 +45,23 @@ internal data class TailnetInboundTogglePresentation(
     val available: Boolean,
 )
 
-internal fun tailnetInboundTogglePresentation(enabled: Boolean, hasForwards: Boolean): TailnetInboundTogglePresentation =
-    TailnetInboundTogglePresentation(enabled = enabled && hasForwards, available = hasForwards)
+/**
+ * The switch is checked only when it has an effect. It is available when a top-level outbound
+ * declares forwards and the core supports them; an enabled switch stays operable so it can
+ * always be turned off.
+ */
+internal fun tailnetInboundTogglePresentation(
+    enabled: Boolean,
+    hasForwards: Boolean,
+    coreUnsupported: Boolean = false,
+): TailnetInboundTogglePresentation = TailnetInboundTogglePresentation(
+    enabled = enabled && hasForwards,
+    available = hasForwards && (enabled || !coreUnsupported),
+)
 
 /** The toggle controls only top-level effective outbounds; provider members are not reconciled. */
 internal fun tailnetInboundForwardsAvailable(card: TailnetCardOutbounds): Boolean =
     card.outbounds.any { it.outbound.provider == null && it.outbound.inboundForwards.isNotEmpty() }
-
-internal fun shouldReloadTailnetInboundToggle(proxyRunning: Boolean): Boolean = proxyRunning
 
 internal data class TailnetInboundForwardPresentation(
     val name: String,
@@ -61,8 +71,10 @@ internal data class TailnetInboundForwardPresentation(
     val state: TailnetInboundPresentationState,
     val error: String? = null,
     val activeConns: Int = 0,
-    val totalConns: Int = 0,
+    val totalConns: Long = 0,
     val address: String? = null,
+    /** Last target dial failure of a forward that is still listening. */
+    val warning: String? = null,
 )
 
 /** The single user action offered for an outbound in its current state. */
@@ -127,20 +139,26 @@ internal fun buildTailnetStatusPresentation(
     return TailnetStatusPresentation(
         outbounds = card.outbounds.map { entry ->
             val outbound = entry.outbound
+            val result = statuses.resultFor(outbound.key)
+            val reported = statuses.inboundForwardsFor(outbound.key)
             TailnetOutboundPresentation(
                 key = outbound.key,
                 hostname = outbound.hostname,
-                status = statuses.resultFor(outbound.key),
+                status = result,
                 stateDirIssues = findings[outbound.key]?.issues.orEmpty().sortedBy { it.ordinal },
                 allowedLoginHosts = outbound.allowedLoginHosts(),
                 source = entry.source,
-                inboundForwards = entry.outbound.inboundForwards.map { forward ->
-                    forward.toPresentation(outboundState = statuses.resultFor(outbound.key), running = (statuses.resultFor(outbound.key) as? TailscaleStatusResult.Available)?.state as? TailscaleBackendState.Running)
+                inboundForwards = inboundForwardRows(outbound.inboundForwards, reported, result),
+                inboundNotice = if (
+                    inboundForwardsEnabled && outbound.provider == null && outbound.inboundForwards.isNotEmpty() &&
+                    result is TailscaleStatusResult.Available && reported == null
+                ) {
+                    // A core with the feature reports every registered forwarding outbound,
+                    // whatever its backend state; an omitted field means an older core.
+                    TailnetInboundNotice.UnsupportedCore
+                } else {
+                    null
                 },
-                inboundNotice = if (inboundForwardsEnabled && entry.outbound.inboundForwards.isNotEmpty() &&
-                    (statuses.resultFor(outbound.key) as? TailscaleStatusResult.Available)?.state is TailscaleBackendState.Running &&
-                    ((statuses.resultFor(outbound.key) as TailscaleStatusResult.Available).state as TailscaleBackendState.Running).inboundForwards == null
-                ) TailnetInboundNotice.UnsupportedCore else null,
             )
         },
         rootRouting = rootRouting,
@@ -149,29 +167,57 @@ internal fun buildTailnetStatusPresentation(
     )
 }
 
+/**
+ * Declared forwards first, then forwards only the core reports (for example proxy-provider
+ * members, whose declarations the profile file cannot show and which the core reports as errors).
+ */
+private fun inboundForwardRows(
+    declared: List<TailnetInboundForward>,
+    reported: List<TailscaleInboundForwardStatus>?,
+    result: TailscaleStatusResult,
+): List<TailnetInboundForwardPresentation> {
+    val rows = declared.map { it.toPresentation(result, reported) }
+    val declaredPorts = declared.map { it.listen }.toSet()
+    val coreOnly = reported.orEmpty().filter { it.listen !in declaredPorts }.map { status ->
+        TailnetInboundForward(status.name, status.network, status.listen, status.target).toPresentation(result, reported)
+    }
+    return rows + coreOnly
+}
+
 private fun TailnetInboundForward.toPresentation(
     outboundState: TailscaleStatusResult,
-    running: TailscaleBackendState.Running?,
+    reported: List<TailscaleInboundForwardStatus>?,
 ): TailnetInboundForwardPresentation {
     if (error != null) return TailnetInboundForwardPresentation(name, network, listen, target, TailnetInboundPresentationState.Invalid, error)
-    val status = running?.inboundForwards?.firstOrNull { it.listen == listen }
+    val backend = (outboundState as? TailscaleStatusResult.Available)?.state
+    val running = backend as? TailscaleBackendState.Running
+    val status = reported?.firstOrNull { it.listen == listen }
     val state = when {
-        outboundState is TailscaleStatusResult.Available &&
-            (outboundState.state is TailscaleBackendState.NeedsLogin || outboundState.state == TailscaleBackendState.Starting) ->
-            TailnetInboundPresentationState.Waiting
-        outboundState !is TailscaleStatusResult.Available || running == null -> TailnetInboundPresentationState.NotRunning
-        status == null -> TailnetInboundPresentationState.NotRunning
+        backend == null -> TailnetInboundPresentationState.NotRunning
+        status == null -> when (backend) {
+            is TailscaleBackendState.NeedsLogin -> TailnetInboundPresentationState.WaitingForLogin
+            TailscaleBackendState.Starting -> TailnetInboundPresentationState.WaitingForNode
+            else -> TailnetInboundPresentationState.NotRunning
+        }
         status.state == TailscaleInboundForwardState.Listening -> TailnetInboundPresentationState.Listening
-        status.state == TailscaleInboundForwardState.Waiting -> TailnetInboundPresentationState.Waiting
+        // The core's Waiting means "node not Running yet"; only NeedsLogin needs the user.
+        status.state == TailscaleInboundForwardState.Waiting -> if (backend is TailscaleBackendState.NeedsLogin) {
+            TailnetInboundPresentationState.WaitingForLogin
+        } else {
+            TailnetInboundPresentationState.WaitingForNode
+        }
         else -> TailnetInboundPresentationState.Error
     }
+    val statusError = status?.error?.takeIf(String::isNotBlank)
     return TailnetInboundForwardPresentation(
         name = name,
         network = network,
         listen = listen,
         target = target,
         state = state,
-        error = status?.error,
+        error = statusError.takeIf { state == TailnetInboundPresentationState.Error },
+        // A Listening forward keeps its last target dial error as a warning.
+        warning = statusError.takeIf { state == TailnetInboundPresentationState.Listening },
         activeConns = status?.activeConns ?: 0,
         totalConns = status?.totalConns ?: 0,
         address = running?.reachableAddress(listen),

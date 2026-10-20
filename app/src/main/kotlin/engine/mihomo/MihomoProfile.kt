@@ -3,6 +3,7 @@
 
 package engine.mihomo
 
+import engine.mihomo.tailscale.MihomoTailscaleProxyType
 import engine.mihomo.tailscale.putTailnetDnsOverrides
 import engine.mihomo.tailscale.putTailnetInboundOverrides
 import android.content.Context
@@ -110,12 +111,21 @@ internal object MihomoProfileFactory {
 
 }
 
-private fun stripTailnetInboundForwardsFromRawProfile(sourceBytes: ByteArray): ByteArray {
+/**
+ * Profiles with overrides disabled are passed to the core byte for byte. Only when a tailscale
+ * proxy actually declares `inbound-forwards` (and forwarding is off or the core is a standby) is
+ * the profile parsed and re-serialized without them; anything else stays untouched, including
+ * comments, anchors and scalar spelling.
+ */
+internal fun stripTailnetInboundForwardsFromRawProfile(sourceBytes: ByteArray): ByteArray {
     val text = sourceBytes.toString(Charsets.UTF_8)
+    if (text.isBlank()) error(MihomoProfileEmptyErrorMessage)
+    if (!text.contains("inbound-forwards")) return sourceBytes.copyOf()
     val escaped = text.escapeSupplementaryYamlCodePoints()
     val root = runCatching {
         Load(MihomoYamlLoadSettings).loadFromString(escaped.value) as? Map<*, *>
     }.getOrNull() ?: return sourceBytes.copyOf()
+    if (!root.hasTailscaleInboundForwards()) return sourceBytes.copyOf()
     val normalized = linkedMapOf<String, Any?>()
     root.forEach { (key, value) ->
         val name = key as? String ?: return@forEach
@@ -124,6 +134,13 @@ private fun stripTailnetInboundForwardsFromRawProfile(sourceBytes: ByteArray): B
     normalized.putTailnetInboundOverrides(exposePorts = false, enabled = false)
     return escaped.restore(dumpYaml(normalizeYamlValue(normalized))).toByteArray(Charsets.UTF_8)
 }
+
+private fun Map<*, *>.hasTailscaleInboundForwards(): Boolean =
+    (this["proxies"] as? List<*>).orEmpty().any { raw ->
+        val proxy = raw as? Map<*, *> ?: return@any false
+        (proxy["type"] as? String)?.trim()?.equals(MihomoTailscaleProxyType, ignoreCase = true) == true &&
+            proxy.containsKey("inbound-forwards")
+    }
 
 private fun String.withAsteriskRuntimeOverrides(
     appState: AppState,

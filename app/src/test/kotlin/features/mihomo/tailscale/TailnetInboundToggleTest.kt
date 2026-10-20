@@ -15,12 +15,6 @@ class TailnetInboundToggleTest {
     }
 
     @Test
-    fun toggleChangeRequestsReloadOnlyWhenProxyIsRunning() {
-        assertTrue(shouldReloadTailnetInboundToggle(proxyRunning = true))
-        assertFalse(shouldReloadTailnetInboundToggle(proxyRunning = false))
-    }
-
-    @Test
     fun providerOnlyForwardsDoNotEnableToggle() {
         val provider = TailnetCardOutbound(
             MihomoTailscaleOutbound(
@@ -39,5 +33,15 @@ class TailnetInboundToggleTest {
         )
 
         assertFalse(tailnetInboundForwardsAvailable(TailnetCardOutbounds(listOf(provider), null)))
+    }
+
+    // L3: the switch shows the effective state, and an unsupported core disables it unless it is on.
+    @Test
+    fun switchReflectsAvailability() {
+        assertFalse(tailnetInboundTogglePresentation(enabled = true, hasForwards = false).enabled)
+        val unsupportedOff = tailnetInboundTogglePresentation(enabled = false, hasForwards = true, coreUnsupported = true)
+        assertFalse(unsupportedOff.available)
+        val unsupportedOn = tailnetInboundTogglePresentation(enabled = true, hasForwards = true, coreUnsupported = true)
+        assertTrue("an enabled switch must stay operable so it can be turned off", unsupportedOn.available)
     }
 }

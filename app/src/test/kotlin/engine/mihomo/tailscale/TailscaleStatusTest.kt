@@ -204,4 +204,15 @@ class TailscaleStatusTest {
         ).single().config!!
         assertEquals(emptySet<String>(), outbound.allowedLoginHosts())
     }
+
+    // M1/N1: forward status is kept for every backend state and counters are 64-bit.
+    @Test
+    fun inboundForwardsParsedForNonRunningStatesWithLargeCounters() {
+        val outbound = parseTailscaleCoreStatuses(
+            """{"outbounds":[{"name":"ts","state":"NeedsLogin","inboundForwards":[{"listen":20022,"target":"127.0.0.1:22","state":"Waiting","totalConns":5000000000}]}]}""",
+        ).single()
+        val forward = outbound.inboundForwards?.single()
+        assertEquals(TailscaleInboundForwardState.Waiting, forward?.state)
+        assertEquals(5_000_000_000L, forward?.totalConns)
+    }
 }

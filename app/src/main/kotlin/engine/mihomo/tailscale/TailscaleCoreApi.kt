@@ -42,7 +42,7 @@ internal data class TailscaleCoreInboundForward(
     val state: String = "",
     val error: String? = null,
     val activeConns: Int = 0,
-    val totalConns: Int = 0,
+    val totalConns: Long = 0,
 )
 
 /** Effective, non-secret outbound options; the core never sends the auth key or control URL. */
@@ -72,7 +72,12 @@ internal fun parseTailscaleCoreStatuses(json: String): List<TailscaleCoreOutboun
         .filter { it.name.isNotBlank() }
         .map { status ->
             val key = TailnetOutboundKey(status.name, status.provider?.takeIf(String::isNotEmpty))
-            TailscaleCoreOutbound(key, status.toBackendState(), status.config?.toOutbound(key))
+            TailscaleCoreOutbound(
+                key,
+                status.toBackendState(),
+                status.config?.toOutbound(key),
+                inboundForwards = status.inboundForwards?.map { it.toInboundForwardStatus() },
+            )
         }
         .distinctBy { it.key }
 
