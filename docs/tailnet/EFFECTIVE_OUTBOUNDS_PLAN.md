@@ -17,7 +17,7 @@ card says so.
    outbound or the only provider member, several members return `409`. JNI functions take
    `(name, provider)`.
 4. Overlay fills `Config` from the effective `TailscaleOption`.
-5. Prerelease `v1.19.32-android.5-tailscale.2`, AAR SHA-256 pinned in the app.
+5. Prerelease `v1.19.32-android.5-tailscale.3`, AAR SHA-256 pinned in the app.
 
 ## App (AsteriskMETA `feat/tailnet-effective-outbounds`)
 
