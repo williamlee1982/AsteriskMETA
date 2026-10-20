@@ -101,6 +101,14 @@ internal object RootOrphanCleanupCommand {
             else -> RootOrphanCleanupOutcome.Failed
         }
     }
+
+    /** An explicit Stop fails when the cleanup pass could not remove every owned resource. */
+    fun stopFailure(outcome: RootOrphanCleanupOutcome): String? =
+        if (outcome == RootOrphanCleanupOutcome.Failed) {
+            "ROOT cleanup incomplete: some network rules may remain. Retry Stop, or reboot if it keeps failing"
+        } else {
+            null
+        }
 }
 
 /**

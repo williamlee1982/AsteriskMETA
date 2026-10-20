@@ -235,7 +235,7 @@ internal class RootSupervisorController(
         val initial = status()
         val initialSnapshot = initial.boundSnapshot() ?: run {
             RootFailureWatcher.stop()
-            cleanupOrphanedResources()
+            RootOrphanCleanupCommand.stopFailure(cleanupOrphanedResources())?.let(::error)
             return initial
         }
         if (initialSnapshot.owner != AsteriskdOwner.AsteriskMeta) {
@@ -329,10 +329,14 @@ internal class RootSupervisorController(
     }
 
     /** No supervisor answers: remove Asterisk-owned rules/routes a dead supervisor left behind. */
-    private suspend fun cleanupOrphanedResources() {
-        val result = runCatching {
+    private suspend fun cleanupOrphanedResources(): RootOrphanCleanupOutcome {
+        val result = try {
             shell.exec(RootOrphanCleanupCommand.build(runtimeLayout), ShellExecOptions(logFailure = false))
-        }.getOrNull() ?: return
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return RootOrphanCleanupOutcome.Failed
+        }
         val outcome = RootOrphanCleanupCommand.outcome(result)
         runCatching {
             if (outcome == RootOrphanCleanupOutcome.Failed) {
@@ -341,6 +345,7 @@ internal class RootSupervisorController(
                 AndroidAppLogger.info(LogTag, "root_cleanup result=${outcome.name.lowercase()}")
             }
         }
+        return outcome
     }
 
     private suspend fun warnAboutPrivateDns(root: RootStartConfig) {

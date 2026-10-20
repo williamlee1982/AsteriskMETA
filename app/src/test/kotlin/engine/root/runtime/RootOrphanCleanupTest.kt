@@ -46,5 +46,17 @@ class RootOrphanCleanupTest {
         val busy = """{"protocolVersion":2,"requestId":"cleanup","result":{"code":"start_failed","snapshot":null,"message":"x"}}"""
         assertEquals(RootOrphanCleanupOutcome.Failed, RootOrphanCleanupCommand.outcome(ShellExecResult(1, busy, "")))
         assertEquals(RootOrphanCleanupOutcome.Failed, RootOrphanCleanupCommand.outcome(ShellExecResult(127, "", "not found")))
+        val incomplete = """{"protocolVersion":2,"requestId":"cleanup","result":{"code":"internal_error","snapshot":null,""" +
+            """"message":"cleanup incomplete: owned rules or routes remain; see asteriskd log"}}"""
+        assertEquals(RootOrphanCleanupOutcome.Failed, RootOrphanCleanupCommand.outcome(ShellExecResult(70, incomplete, "")))
+    }
+
+    /** Review follow-up: an explicit Stop must not report success while owned rules remain. */
+    @Test
+    fun onlyAFailedPassFailsStop() {
+        assertTrue(RootOrphanCleanupCommand.stopFailure(RootOrphanCleanupOutcome.Failed).orEmpty().contains("cleanup"))
+        for (outcome in listOf(RootOrphanCleanupOutcome.Skipped, RootOrphanCleanupOutcome.Cleaned, RootOrphanCleanupOutcome.SupervisorLive)) {
+            assertEquals(null, RootOrphanCleanupCommand.stopFailure(outcome))
+        }
     }
 }
