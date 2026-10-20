@@ -3,6 +3,11 @@
 
 package features.mihomo.tailscale
 
+import app.MihomoOverrideScriptState
+import app.MihomoProfileState
+import app.modes.RunModeVpnService
+import engine.mihomo.MihomoProfileScriptEngine
+import engine.mihomo.effectiveMihomoTailscaleOutbounds
 import engine.mihomo.tailscale.TailnetOutboundKey
 import engine.mihomo.tailscale.TailscaleBackendState
 import engine.mihomo.tailscale.TailscaleCoreOutbound
@@ -18,6 +23,40 @@ import org.junit.Test
 
 class TailnetCardOutboundsTest {
     private val idle = TailscaleBackendState.Idle
+
+    @Test
+    fun scriptOnlyOutboundKeepsTheCardVisibleWithEveryUnavailableReason() {
+        val script = MihomoOverrideScriptState(
+            id = 7,
+            name = "Add Tailnet",
+            content = "function main(config) { config.proxies = [{ name: 'TS', type: 'tailscale' }]; return config; }",
+        )
+        val effective = effectiveMihomoTailscaleOutbounds(
+            "proxies: []",
+            MihomoProfileState(id = 1, name = "Example", overrideScriptId = script.id),
+            listOf(script),
+            MihomoProfileScriptEngine { """{"proxies":[{"name":"TS","type":"tailscale","state-dir":"./ts"}]}""" },
+        )
+        for (reason in TailscaleStatusUnavailableReason.entries) {
+            val statuses = TailscaleStatusQuery.Unavailable(reason)
+            val card = resolveTailnetCardOutbounds(statuses, effective)
+            assertEquals(listOf("TS"), card.outbounds.map { it.outbound.name })
+            assertEquals(reason, card.profileFallback)
+            assertEquals(TailnetOutboundSource.ProfileFile, card.outbounds.single().source)
+
+            val presentation = buildTailnetStatusPresentation(
+                card = card,
+                runMode = RunModeVpnService,
+                privateAddressCidrs = emptyList(),
+                mihomoHomeDirectory = "/data/user/0/example.app/files/clash",
+                ownPackageName = "example.app",
+                statuses = statuses,
+            )
+            assertTrue(presentation.visible)
+            assertEquals(reason, presentation.profileFallback)
+            assertEquals(reason, (presentation.outbounds.single().status as engine.mihomo.tailscale.TailscaleStatusResult.Unavailable).reason)
+        }
+    }
 
     private fun core(vararg outbounds: TailscaleCoreOutbound) = TailscaleStatusQuery.Available(outbounds.toList())
 

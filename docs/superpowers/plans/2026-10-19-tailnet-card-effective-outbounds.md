@@ -23,10 +23,10 @@
 - Modify: `app/src/test/kotlin/features/mihomo/tailscale/TailnetCardOutboundsTest.kt` (and/or a new helper test next to profile script override tests)
 - Create if needed: unit test that builds a raw YAML without tailscale + a script that adds `TS`, then asserts parse of effective config yields `TS`.
 
-- [ ] Write failing test(s): Unavailable status + effective list containing script-only TS → card outbounds non-empty + profileFallback set.
-- [ ] Write failing test for the helper that loads effective tailscale outbounds from raw yaml + script (if extracted).
-- [ ] Run tests; confirm RED.
-- [ ] Commit.
+- [x] Write failing test(s): Unavailable status + effective list containing script-only TS → card outbounds non-empty + profileFallback set.
+- [x] Write failing test for the helper that loads effective tailscale outbounds from raw yaml + script (if extracted).
+- [x] Run tests; confirm RED.
+- [x] Commit.
 
 ## Task 2: Implement effective outbound loading for the dashboard
 
