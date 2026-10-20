@@ -1099,4 +1099,16 @@
     <string name="tailnet_root_broad_override">Broad override %1$s also captures non-Tailnet carrier CGNAT traffic</string>
     <string name="tailnet_outbound_provider">From proxy provider: %1$s</string>
     <string name="tailnet_profile_fallback">Read from the profile file because the core is not reporting its running configuration. Outbounds from proxy providers and override scripts are listed once the proxy is running.</string>
+    <string name="tailnet_inbound_forwards_title">Inbound forwarding</string>
+    <string name="tailnet_inbound_forwards_toggle">Enable forwarding (always online)</string>
+    <string name="tailnet_inbound_forwards_hint">Declare inbound-forwards on a top-level tailscale outbound in the profile or override script.</string>
+    <string name="tailnet_inbound_forwards_unsupported">This core does not support inbound forwards. Update the app/core.</string>
+    <string name="tailnet_inbound_forwards_acl">Restrict inbound ports in your Tailnet ACL policy.</string>
+    <string name="tailnet_inbound_forward_state_listening">Listening</string>
+    <string name="tailnet_inbound_forward_state_waiting">Waiting for login</string>
+    <string name="tailnet_inbound_forward_state_error">Error: %1$s</string>
+    <string name="tailnet_inbound_forward_state_not_running">Not running</string>
+    <string name="tailnet_inbound_forward_connections">Connections: %1$d active · %2$d total</string>
+    <string name="tailnet_inbound_forward_address">Reachable at %1$s</string>
+    <string name="tailnet_inbound_forward_invalid">Invalid: %1$s</string>
 </resources>

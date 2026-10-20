@@ -42,6 +42,20 @@ class EffectiveTailnetOutboundsTest {
     }
 
     @Test
+    fun overrideScriptForwardsAreVisible() {
+        val outbounds = effectiveMihomoTailscaleOutbounds(
+            "proxies: []",
+            profile,
+            listOf(script),
+            MihomoProfileScriptEngine {
+                """{"proxies":[{"name":"TS","type":"tailscale","inbound-forwards":[{"name":"ssh","listen":20022,"target":"127.0.0.1:8022"}]}]}"""
+            },
+        )
+
+        assertEquals(listOf(20022), outbounds.single().inboundForwards.map { it.listen })
+    }
+
+    @Test
     fun effectiveConfigReplacesRawOutboundsRatherThanMergingThem() {
         val outbounds = effectiveMihomoTailscaleOutbounds(
             "proxies: [{ name: raw, type: tailscale }]",

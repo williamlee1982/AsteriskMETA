@@ -96,6 +96,27 @@ files into notes, issues or screenshots.
 - [ ] E2 Rule/Global/Direct switches still apply hot (no restart).
 - [ ] E3 Profiles without tailscale outbounds show no Tailnet card.
 
+## G. Inbound forwarding (core `tailscale.4` or newer)
+
+- [ ] G1 With the generic profile declaration (listen ports >= `20000`) and the toggle off, the
+      card shows the configured rows but the active and standby runtime configs contain no
+      `inbound-forwards`; no listener is reachable.
+- [ ] G2 Toggle **Enable forwarding (always online)** on while the proxy is running: the profile
+      reloads without a supervised ROOT restart, the row reaches **Listening** after login, and a
+      Tailnet peer can connect to the shown MagicDNS/IP address.
+- [ ] G3 Toggle off again: the profile reload removes the listener and a new connection is refused;
+      existing root/VPN routing and the Tailscale identity remain healthy.
+- [ ] G4 Before login, each configured row shows **Waiting for login**. A profile-only row that is
+      absent from the running core shows **Not running**.
+- [ ] G5 Connect repeatedly and record active/total counters. A target dial failure reports the
+      row error while the listener stays available for a later retry.
+- [ ] G6 Verify the Tailnet ACL limits the forwarding port to the intended group/tag. Do not paste
+      login URLs, auth keys, state files, or personal hostnames/IPs into the test record.
+- [ ] G7 Repeat G1–G5 in VPN and one ROOT mode (TPROXY or TUN), with IPv6 enabled and disabled;
+      confirm the VPN lifecycle still performs no ROOT operation.
+- [ ] G8 Run against an older core (`tailscale.3`, e.g. a local `-Pasterisk.libclash.localAar`
+      build): the toggle/card reports that the core does not support inbound forwards. Do not treat an absent status field as an empty list.
+
 ## F. Privacy
 
 - [ ] F1 Shared app logs and exported diagnostics contain no `tskey-`, login URL path, cookie or

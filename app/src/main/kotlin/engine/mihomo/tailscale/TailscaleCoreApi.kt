@@ -30,6 +30,19 @@ internal data class TailscaleCoreStatus(
     val error: String? = null,
     val provider: String? = null,
     val config: TailscaleCoreConfig? = null,
+    val inboundForwards: List<TailscaleCoreInboundForward>? = null,
+)
+
+@Serializable
+internal data class TailscaleCoreInboundForward(
+    val name: String = "",
+    val network: String = "tcp",
+    val listen: Int = 0,
+    val target: String = "",
+    val state: String = "",
+    val error: String? = null,
+    val activeConns: Int = 0,
+    val totalConns: Int = 0,
 )
 
 /** Effective, non-secret outbound options; the core never sends the auth key or control URL. */
@@ -86,9 +99,28 @@ internal fun TailscaleCoreStatus.toBackendState(): TailscaleBackendState = when 
         hostname = hostname?.trim()?.takeIf(String::isNotEmpty),
         dnsName = dnsName?.trim()?.removeSuffix(".")?.takeIf(String::isNotEmpty),
         magicDnsSuffix = magicDnsSuffix?.trim()?.removeSuffix(".")?.takeIf(String::isNotEmpty),
+        inboundForwards = inboundForwards?.map { it.toInboundForwardStatus() },
     )
     "Error" -> tailscaleBackendError(error?.takeIf(String::isNotBlank) ?: "Tailscale error")
     else -> tailscaleBackendError("Unknown Tailscale backend state")
+}
+
+private fun TailscaleCoreInboundForward.toInboundForwardStatus(): TailscaleInboundForwardStatus {
+    val parsedState = when (state) {
+        "Listening" -> TailscaleInboundForwardState.Listening
+        "Waiting" -> TailscaleInboundForwardState.Waiting
+        else -> TailscaleInboundForwardState.Error
+    }
+    return TailscaleInboundForwardStatus(
+        name = name.trim(),
+        network = network.trim().ifEmpty { "tcp" },
+        listen = listen,
+        target = target.trim(),
+        state = parsedState,
+        error = error?.let(::redactTailnetSecrets)?.take(MaxErrorMessageLength),
+        activeConns = activeConns.coerceAtLeast(0),
+        totalConns = totalConns.coerceAtLeast(0),
+    )
 }
 
 /** Extracts the URL from `GET /asterisk/tailscale/login-url`. Keep the result in memory only. */

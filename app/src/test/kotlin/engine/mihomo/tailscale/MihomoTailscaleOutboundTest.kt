@@ -52,6 +52,64 @@ class MihomoTailscaleOutboundTest {
         assertTrue(parseMihomoTailscaleOutbounds("proxies: not-a-list").isEmpty())
     }
 
+    @Test
+    fun parsesInboundForwardsAndDefaultsNameAndNetwork() {
+        val outbound = parseMihomoTailscaleOutbounds(
+            """
+            proxies:
+              - name: TS
+                type: tailscale
+                inbound-forwards:
+                  - listen: 20022
+                    target: 127.0.0.1:22
+                  - name: adb
+                    network: tcp
+                    listen: 20555
+                    target: 127.0.0.1:5555
+            """.trimIndent(),
+        ).single()
+
+        assertEquals(
+            listOf(
+                TailnetInboundForward(name = "20022", network = "tcp", listen = 20022, target = "127.0.0.1:22"),
+                TailnetInboundForward(name = "adb", network = "tcp", listen = 20555, target = "127.0.0.1:5555"),
+            ),
+            outbound.inboundForwards,
+        )
+    }
+
+    @Test
+    fun invalidInboundEntriesAreReportedNotDropped() {
+        val forwards = parseMihomoTailscaleOutbounds(
+            """
+            proxies:
+              - name: TS
+                type: tailscale
+                inbound-forwards:
+                  - listen: nope
+                    target: example.test:22
+            """.trimIndent(),
+        ).single().inboundForwards
+
+        assertEquals(1, forwards.size)
+        assertTrue(forwards.single().error?.isNotBlank() == true)
+    }
+
+    @Test
+    fun malformedInboundForwardsValueIsReportedNotDropped() {
+        val forwards = parseMihomoTailscaleOutbounds(
+            """
+            proxies:
+              - name: TS
+                type: tailscale
+                inbound-forwards: invalid
+            """.trimIndent(),
+        ).single().inboundForwards
+
+        assertEquals(1, forwards.size)
+        assertTrue(forwards.single().error?.contains("list") == true)
+    }
+
     private companion object {
         const val FakeSecret = "fixture-secret-value"
     }

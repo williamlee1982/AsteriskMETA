@@ -4,6 +4,7 @@
 package engine.mihomo
 
 import engine.mihomo.tailscale.putTailnetDnsOverrides
+import engine.mihomo.tailscale.putTailnetInboundOverrides
 import android.content.Context
 import app.AppState
 import app.withCompatibleProxyAppListMode
@@ -72,6 +73,9 @@ internal object MihomoProfileFactory {
         val selectedProfile = appState.selectedMihomoProfileOrNull()
             ?: error(MihomoProfileMissingErrorMessage)
         val sourceBytes = context.mihomoProfileContentStore().readBytes(selectedProfile)
+        if (selectedProfile.disableOverrides && (!exposePorts || !appState.tailnetInboundForwardsEnabled)) {
+            return stripTailnetInboundForwardsFromRawProfile(sourceBytes)
+        }
         val resolved = resolveMihomoRuntimeProfileBytes(
             sourceBytes = sourceBytes,
             disableOverrides = selectedProfile.disableOverrides,
@@ -104,6 +108,21 @@ internal object MihomoProfileFactory {
         }
     }
 
+}
+
+private fun stripTailnetInboundForwardsFromRawProfile(sourceBytes: ByteArray): ByteArray {
+    val text = sourceBytes.toString(Charsets.UTF_8)
+    val escaped = text.escapeSupplementaryYamlCodePoints()
+    val root = runCatching {
+        Load(MihomoYamlLoadSettings).loadFromString(escaped.value) as? Map<*, *>
+    }.getOrNull() ?: return sourceBytes.copyOf()
+    val normalized = linkedMapOf<String, Any?>()
+    root.forEach { (key, value) ->
+        val name = key as? String ?: return@forEach
+        normalized[name] = normalizeYamlValue(value)
+    }
+    normalized.putTailnetInboundOverrides(exposePorts = false, enabled = false)
+    return escaped.restore(dumpYaml(normalizeYamlValue(normalized))).toByteArray(Charsets.UTF_8)
 }
 
 private fun String.withAsteriskRuntimeOverrides(
@@ -240,6 +259,7 @@ private fun MutableMap<String, Any?>.putAsteriskRuntimeOverrides(
     putDnsHijackOverrides(appState, runMode)
     putNtpWriteToSystemOverride()
     putTailnetDnsOverrides()
+    putTailnetInboundOverrides(exposePorts = exposePorts, enabled = appState.tailnetInboundForwardsEnabled)
 }
 
 internal fun resolveMihomoRuntimeProfileBytes(

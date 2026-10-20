@@ -62,7 +62,16 @@ internal fun resolveTailnetCardOutbounds(
     val profileByKey = profile.associateBy { it.key }
     val running = statuses.outbounds.map { reported ->
         // A core without the config summary: borrow the profile entry it was declared by.
-        val config = reported.config ?: profileByKey[reported.key]
+        // The summary never carries inbound-forwards (and the runtime config strips them while
+        // the toggle is off), so keep the effective profile's forwards for the toggle and card.
+        val declared = profileByKey[reported.key]
+        val config = reported.config?.let { summary ->
+            if (summary.inboundForwards.isEmpty() && declared != null) {
+                summary.copy(inboundForwards = declared.inboundForwards)
+            } else {
+                summary
+            }
+        } ?: declared
         TailnetCardOutbound(
             outbound = config ?: bareOutbound(reported.key),
             source = TailnetOutboundSource.RunningCore,

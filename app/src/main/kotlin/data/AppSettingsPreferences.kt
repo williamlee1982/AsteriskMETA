@@ -96,6 +96,10 @@ internal class AppSettingsPreferences(
             ) ?: defaults.mihomoControlPort,
             mihomoControlSecret = mihomoControlSecret,
             enableLocalDns = preferences.getBoolean(KeyEnableLocalDns, defaults.enableLocalDns),
+            tailnetInboundForwardsEnabled = preferences.getBoolean(
+                KeyTailnetInboundForwardsEnabled,
+                defaults.tailnetInboundForwardsEnabled,
+            ),
             localProxyPort = preferences.getString(KeyLocalProxyPort, defaults.localProxyPort) ?: defaults.localProxyPort,
             enableDynamicLocalProxyPort = preferences.getBoolean(
                 KeyEnableDynamicLocalProxyPort,
@@ -322,6 +326,7 @@ internal class AppSettingsPreferences(
             .putString(KeyMihomoControlPort, state.mihomoControlPort)
             .putString(KeyMihomoControlSecret, state.mihomoControlSecret)
             .putBoolean(KeyEnableLocalDns, state.enableLocalDns)
+            .putBoolean(KeyTailnetInboundForwardsEnabled, state.tailnetInboundForwardsEnabled)
             .putString(KeyLocalProxyPort, state.localProxyPort)
             .putBoolean(KeyEnableDynamicLocalProxyPort, state.enableDynamicLocalProxyPort)
             .putBoolean(KeyLocalProxyListenAllInterfaces, state.localProxyListenAllInterfaces)
@@ -554,6 +559,7 @@ private const val KeyMihomoTunCongestionController = "mihomo_tun_congestion_cont
 private const val KeyMihomoControlPort = "mihomo_control_port"
 private const val KeyMihomoControlSecret = "mihomo_control_secret"
 private const val KeyEnableLocalDns = "enable_local_dns"
+private const val KeyTailnetInboundForwardsEnabled = "tailnet_inbound_forwards_enabled"
 private const val KeyLocalProxyPort = "local_proxy_port"
 private const val KeyEnableDynamicLocalProxyPort = "enable_dynamic_local_proxy_port"
 private const val KeyLocalProxyListenAllInterfaces = "local_proxy_listen_all_interfaces"
