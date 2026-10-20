@@ -121,6 +121,8 @@ internal data class AppBackupSettings(
     val transparentProxyPort: String = BackupDefaults.transparentProxyPort,
     val enableRootEbpfDirectCidrBypass: Boolean = BackupDefaults.enableRootEbpfDirectCidrBypass,
     val enableRootIpv6Disabler: Boolean = BackupDefaults.enableRootIpv6Disabler,
+    val enableRootCaptureBoundNetworks: Boolean = BackupDefaults.enableRootCaptureBoundNetworks,
+    val enableRootBlockEncryptedDns: Boolean = BackupDefaults.enableRootBlockEncryptedDns,
     val socks5ProxyPort: String = BackupDefaults.socks5ProxyPort,
     val bpf2SocksBridgePort: String = BackupDefaults.bpf2SocksBridgePort,
     val serviceControl: AppBackupServiceControl = AppBackupServiceControl(),

@@ -111,6 +111,8 @@ internal fun RootStartConfig.buildAsteriskdConfig(
                     directCidrPathV4 = directCidrIpv4Path.takeIf { useDirectCidrs },
                     directCidrPathV6 = directCidrIpv6Path.takeIf { useDirectCidrs },
                 ),
+                captureBoundNetworks = mode == AsteriskdMode.Tproxy && captureBoundNetworks,
+                blockEncryptedDns = enableLocalDns && blockEncryptedDns,
             )
         },
         modeOptions = modeOptions,

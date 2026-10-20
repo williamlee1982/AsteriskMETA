@@ -19,6 +19,7 @@ Android Mihomo GUI 客户端。
 
 - 通过 libsu 直接运行本地 Mihomo 可执行文件。
 - 使用 iptables 和策略路由处理透明代理流量。
+- 分支加固（残留清理、严格就绪检测、可选接管绑定网络应用与阻断 853）：见 [docs/root/TPROXY_ROOT_HARDENING.md](docs/root/TPROXY_ROOT_HARDENING.md)。
 
 ### TUN(ROOT)
 

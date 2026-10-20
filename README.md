@@ -19,6 +19,7 @@ Android Mihomo GUI client.
 
 - Runs the local Mihomo executable directly with libsu.
 - Uses iptables and policy routing for transparent proxy traffic.
+- Fork hardening (orphan cleanup, strict readiness, optional capture of network-bound apps and 853 block): see [docs/root/TPROXY_ROOT_HARDENING.md](docs/root/TPROXY_ROOT_HARDENING.md).
 
 ### TUN(ROOT)
 

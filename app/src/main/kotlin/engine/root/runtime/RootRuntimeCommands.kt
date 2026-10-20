@@ -77,3 +77,52 @@ internal object RootShutdownOwnCommand {
 }
 
 private const val SocketReleasePollAttempts = 50
+
+internal enum class RootOrphanCleanupOutcome { Skipped, Cleaned, SupervisorLive, Failed }
+
+/**
+ * Cleanup-only pass for when no supervisor answers: removes Asterisk-owned rules, routes
+ * and pins a crashed or killed supervisor left behind. Never starts anything.
+ */
+internal object RootOrphanCleanupCommand {
+    fun build(layout: RootRuntimeLayout): String {
+        val config = layout.asteriskdConfigPath.shellQuote()
+        return "( [ -f $config ] || exit 0; exec ${layout.asteriskdPath.shellQuote()} cleanup --config $config )"
+    }
+
+    fun outcome(result: system.ShellExecResult): RootOrphanCleanupOutcome {
+        if (result.errno == 0 && result.stdout.isBlank()) return RootOrphanCleanupOutcome.Skipped
+        val response = runCatching {
+            engine.root.daemon.control.AsteriskdControlCodec.decodeShellResponse("cleanup", result)
+        }.getOrNull() ?: return RootOrphanCleanupOutcome.Failed
+        return when (response.result.code) {
+            engine.root.daemon.control.AsteriskdResultCode.Ok -> RootOrphanCleanupOutcome.Cleaned
+            engine.root.daemon.control.AsteriskdResultCode.AlreadyRunning -> RootOrphanCleanupOutcome.SupervisorLive
+            else -> RootOrphanCleanupOutcome.Failed
+        }
+    }
+}
+
+/**
+ * Private DNS sends queries to port 853, which local DNS interception (port 53) does not see.
+ * Returns a user-facing warning, or null when nothing needs attention.
+ */
+internal fun rootPrivateDnsWarning(
+    privateDnsMode: String?,
+    localDnsEnabled: Boolean,
+    blockEncryptedDns: Boolean,
+): String? {
+    if (!localDnsEnabled) return null
+    return when (privateDnsMode?.trim()?.lowercase()) {
+        "hostname" -> if (blockEncryptedDns) {
+            "Strict Private DNS is on while port 853 is blocked: DNS will fail. Set Private DNS to Off or Automatic"
+        } else {
+            "Strict Private DNS is on: DNS bypasses local DNS interception. Set Private DNS to Off or Automatic"
+        }
+        "opportunistic" -> if (blockEncryptedDns) null else {
+            "Private DNS is automatic: DNS may bypass local DNS interception via port 853. " +
+                "Enable \"Block encrypted DNS\" or set Private DNS to Off"
+        }
+        else -> null
+    }
+}

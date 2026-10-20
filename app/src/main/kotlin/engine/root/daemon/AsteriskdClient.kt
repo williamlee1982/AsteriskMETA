@@ -85,11 +85,22 @@ internal class AsteriskdClient(
         }
     }
 
-    suspend fun awaitRunning(executablePath: String): AsteriskdSnapshot {
+    /**
+     * Waits until the supervisor reports running or fails. A watch window that ends while the
+     * daemon is still progressing (validating/acquiring/starting/applying rules) is re-watched,
+     * so a slow but healthy start is not abandoned; the daemon bounds its own start stages.
+     * Only an unbound control socket is given up on after [unboundTimeoutMilliseconds].
+     */
+    suspend fun awaitRunning(
+        executablePath: String,
+        unboundTimeoutMilliseconds: Long = DefaultUnboundTimeoutMilliseconds,
+        clock: () -> Long = System::currentTimeMillis,
+    ): AsteriskdSnapshot {
         val command =
             "timeout -k 1s ${WatchProcessTimeoutSeconds}s " +
                 "${executablePath.shellQuote()} watch --until-running"
         var retryDelayMilliseconds = InitialWatchRetryDelayMilliseconds
+        var unboundSince: Long? = null
         while (true) {
             val stream = RunningWatchStream()
             val result = shell.execStreaming(
@@ -102,9 +113,20 @@ internal class AsteriskdClient(
             }
             stream.runningSnapshot?.let { return it }
             if (stream.retryWhenUnbound) {
+                val now = clock()
+                val since = unboundSince ?: now.also { unboundSince = it }
+                check(now - since < unboundTimeoutMilliseconds) {
+                    "asteriskd did not bind its control socket before timeout"
+                }
                 delay(retryDelayMilliseconds.milliseconds)
                 retryDelayMilliseconds = (retryDelayMilliseconds * 2L)
                     .coerceAtMost(MaxWatchRetryDelayMilliseconds)
+                continue
+            }
+            unboundSince = null
+            if (stream.progressing) {
+                runCatching { AndroidAppLogger.info(LogTag, "root_watch window ended while starting; re-watching") }
+                delay(MaxWatchRetryDelayMilliseconds.milliseconds)
                 continue
             }
             error(
@@ -139,6 +161,7 @@ internal class AsteriskdClient(
         const val InitialWatchRetryDelayMilliseconds = 10L
         const val MaxWatchRetryDelayMilliseconds = 250L
         const val WatchProcessTimeoutSeconds = 16L
+        const val DefaultUnboundTimeoutMilliseconds = 15_000L
         val DefaultWatchRetryDelaysMilliseconds = listOf(25L, 50L, 100L, 200L, 400L, 800L)
     }
 
@@ -201,6 +224,11 @@ internal class AsteriskdClient(
         var retryWhenUnbound: Boolean = false
             private set
 
+        /** Last observed snapshot was a non-terminal start phase. */
+        @Volatile
+        var progressing: Boolean = false
+            private set
+
         private var initialReceived = false
         private var lastSequence = 0L
 
@@ -240,6 +268,7 @@ internal class AsteriskdClient(
         }
 
         private fun inspect(snapshot: AsteriskdSnapshot) {
+            progressing = snapshot.phase in ProgressingPhases
             if (snapshot.phase == AsteriskdPhase.Failed) {
                 error(snapshot.error?.message ?: "asteriskd entered failed phase")
             }
@@ -253,3 +282,10 @@ internal class AsteriskdClient(
         }
     }
 }
+
+private val ProgressingPhases = setOf(
+    AsteriskdPhase.Validating,
+    AsteriskdPhase.Acquiring,
+    AsteriskdPhase.Starting,
+    AsteriskdPhase.ApplyingRules,
+)

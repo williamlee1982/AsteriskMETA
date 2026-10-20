@@ -58,7 +58,7 @@ private fun AppState.toRootStartConfig(
     rawConfig: MihomoRawConfigSnapshot?,
 ): RootStartConfig {
     val dataDirectory = File(resourceFilePaths.dataDir)
-    val rawDnsHijack = rawConfig?.dnsHijack?.value?.proven == true && enableLocalDns
+    val rawDnsHijack = rawConfig?.dnsHijack?.value?.provenFor(runMode) == true && enableLocalDns
     return RootStartConfig(
         mihomoProfileBytes = mihomoProfileBytes,
         ageSecretKey = selectedMihomoProfileOrNull()?.ageSecretKey?.takeIf(String::isNotEmpty),
@@ -83,6 +83,8 @@ private fun AppState.toRootStartConfig(
         enableBoot = enableRootBootScript,
         serviceControl = serviceControl,
         manageProviders = selectedMihomoProfileOrNull()?.disableOverrides != true,
+        captureBoundNetworks = enableRootCaptureBoundNetworks,
+        blockEncryptedDns = enableRootBlockEncryptedDns,
     )
 }
 

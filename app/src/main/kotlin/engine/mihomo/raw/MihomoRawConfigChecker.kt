@@ -8,6 +8,7 @@ import app.modes.RunModeTun
 import app.modes.RunModeTun2Socks
 import app.modes.RunModeTproxy
 import app.modes.RunModeVpnService
+import app.modes.isRootRunMode
 
 internal fun MihomoRawConfigParseResult.check(
     runMode: Int,
@@ -38,6 +39,15 @@ internal fun MihomoRawConfigSnapshot.check(
     val issues = mutableListOf<RawConfigIssue>()
     fun issue(readiness: RawConfigReadiness, path: String, reason: String) {
         issues += RawConfigIssue(readiness, path, reason)
+    }
+    val apiValue = api.value
+    if (runMode.isRootRunMode() && apiValue != null && apiValue.bindsNonLoopback && !apiValue.hasSecret) {
+        issue(
+            RawConfigReadiness.Blocked,
+            api.path,
+            "ROOT mode would expose the Mihomo controller beyond loopback without a secret; " +
+                "set `secret` or bind the controller to 127.0.0.1",
+        )
     }
     if (api.value == null) {
         issue(
@@ -70,11 +80,12 @@ internal fun MihomoRawConfigSnapshot.check(
             socksInbound.problem ?: "Local proxy features are unavailable because YAML has no SOCKS or Mixed inbound",
         )
     }
-    if (dnsHijackRequested && dnsHijack.value?.proven != true) {
+    if (dnsHijackRequested && dnsHijack.value?.provenFor(runMode, vpnUsesHev) != true) {
         issue(
             RawConfigReadiness.Degraded,
             "rules",
-            "DNS hijack is not installed because YAML does not prove enabled DNS outbound rules for both TCP and UDP port 53",
+            "DNS hijack is not installed because YAML does not prove enabled DNS outbound rules for both TCP and UDP " +
+                "port 53 on the inbound this run mode uses",
         )
     }
     val readiness = when {

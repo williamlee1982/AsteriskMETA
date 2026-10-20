@@ -203,6 +203,16 @@ internal fun settingsTopLevelSearchItems(
             stringResource(R.string.settings_root_ipv6_disabler),
             stringResource(R.string.settings_root_ipv6_disabler_summary),
         ),
+        SettingsSearchItem(
+            SettingsSectionId.Tproxy,
+            stringResource(R.string.settings_root_capture_bound_networks),
+            stringResource(R.string.settings_root_capture_bound_networks_summary),
+        ),
+        SettingsSearchItem(
+            SettingsSectionId.Tproxy,
+            stringResource(R.string.settings_root_block_encrypted_dns),
+            stringResource(R.string.settings_root_block_encrypted_dns_summary),
+        ),
         SettingsSearchItem(SettingsSectionId.Tproxy, stringResource(if (runMode == app.modes.RunModeTun) R.string.settings_tun_shared_network else R.string.settings_external_interfaces), externalInterfacesSummary),
         SettingsSearchItem(SettingsSectionId.Tproxy, stringResource(R.string.settings_ignored_interfaces), ignoredInterfacesSummary),
         SettingsSearchItem(SettingsSectionId.Tproxy, stringResource(R.string.settings_private_addresses), privateAddressesSummary),

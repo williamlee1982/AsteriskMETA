@@ -5,6 +5,7 @@ package features.settings
 
 import android.os.Build
 import app.modes.RunModeBpf2Socks
+import app.modes.RunModeTproxy
 import app.modes.RunModeTun
 import app.modes.RunModeTun2Socks
 import app.modes.RunModeVpnService
@@ -403,6 +404,8 @@ internal fun SettingsProxyModeSections(
     enableRootEbpfDirectCidrBypass: Boolean,
     enableIpv6: Boolean,
     enableRootIpv6Disabler: Boolean,
+    enableRootCaptureBoundNetworks: Boolean,
+    enableRootBlockEncryptedDns: Boolean,
     externalInterfacesSummary: String,
     ignoredInterfacesSummary: String,
     privateAddressCidrsSummary: String,
@@ -417,6 +420,8 @@ internal fun SettingsProxyModeSections(
     onEnableRootEbpfRulesChange: (Boolean) -> Unit,
     onEnableRootEbpfDirectCidrBypassChange: (Boolean) -> Unit,
     onEnableRootIpv6DisablerChange: (Boolean) -> Unit,
+    onEnableRootCaptureBoundNetworksChange: (Boolean) -> Unit,
+    onEnableRootBlockEncryptedDnsChange: (Boolean) -> Unit,
     onOpenExternalInterfaces: () -> Unit,
     onOpenServiceControl: () -> Unit,
     onOpenIgnoredInterfaces: () -> Unit,
@@ -579,6 +584,24 @@ internal fun SettingsProxyModeSections(
                         onCheckedChange = onEnableRootIpv6DisablerChange,
                     )
                 }
+                if (runMode == RunModeTproxy) {
+                    SwitchPreference(
+                        title = stringResource(R.string.settings_root_capture_bound_networks),
+                        accent = IconAccent.MaskGreen,
+                        icon = Icons.Rounded.Route,
+                        summary = stringResource(R.string.settings_root_capture_bound_networks_summary),
+                        checked = enableRootCaptureBoundNetworks,
+                        onCheckedChange = onEnableRootCaptureBoundNetworksChange,
+                    )
+                }
+                SwitchPreference(
+                    title = stringResource(R.string.settings_root_block_encrypted_dns),
+                    accent = IconAccent.MaskPurple,
+                    icon = Icons.Rounded.Security,
+                    summary = stringResource(R.string.settings_root_block_encrypted_dns_summary),
+                    checked = enableRootBlockEncryptedDns,
+                    onCheckedChange = onEnableRootBlockEncryptedDnsChange,
+                )
                 SwitchPreference(
                     title = stringResource(R.string.settings_traffic_stats_notification),
                     accent = IconAccent.MaskPink,

@@ -66,7 +66,8 @@ class MihomoLocalProxyPortOverrideTest {
 
     private fun render(appState: AppState, runMode: Int): Map<*, *> {
         val yaml = sourceProfile().toAsteriskRuntimeProfileYaml(
-            appState = appState,
+            // ROOT modes refuse a blank controller secret; production state always carries one.
+            appState = appState.copy(mihomoControlSecret = "fixture-secret"),
             runMode = runMode,
             tunApplicationUids = emptyList(),
             useRootProviderPaths = false,

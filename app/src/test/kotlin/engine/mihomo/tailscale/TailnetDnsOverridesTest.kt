@@ -76,7 +76,7 @@ class TailnetDnsOverridesTest {
     fun appliesInVpnAndRootRuntimeProfiles() {
         for (runMode in listOf(RunModeVpnService, RunModeTproxy)) {
             val yaml = profile(AsteriskTailnetDnsKey to mapOf("suffixes" to listOf("ts.net")))
-                .toAsteriskRuntimeProfileYaml(AppState(), runMode, tunApplicationUids = emptyList(), useRootProviderPaths = false)
+                .toAsteriskRuntimeProfileYaml(AppState(mihomoControlSecret = "fixture-secret"), runMode, tunApplicationUids = emptyList(), useRootProviderPaths = false)
             val runtime = Load(MihomoYamlLoadSettings).loadFromString(yaml) as Map<*, *>
             val policy = (runtime["dns"] as Map<*, *>)["nameserver-policy"] as Map<*, *>
             assertEquals("runMode=$runMode", "tailscale://TS", policy["+.ts.net"])

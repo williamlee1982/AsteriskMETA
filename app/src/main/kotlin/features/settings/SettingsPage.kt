@@ -499,6 +499,8 @@ private fun SettingsContent(
                     onOpenTunBypassRuleSets = { sheetState.openTunBypassRuleSets(appState) },
                     enableIpv6 = appState.enableIpv6,
                     enableRootIpv6Disabler = appState.enableRootIpv6Disabler,
+                    enableRootCaptureBoundNetworks = appState.enableRootCaptureBoundNetworks,
+                    enableRootBlockEncryptedDns = appState.enableRootBlockEncryptedDns,
                     externalInterfacesSummary = externalInterfacesSummary,
                     ignoredInterfacesSummary = ignoredInterfacesSummary,
                     privateAddressCidrsSummary = privateAddressCidrsSummary,
@@ -584,6 +586,12 @@ private fun SettingsContent(
                     },
                     onEnableRootIpv6DisablerChange = { enabled ->
                         updateAppState { state -> state.copy(enableRootIpv6Disabler = enabled) }
+                    },
+                    onEnableRootCaptureBoundNetworksChange = { enabled ->
+                        updateAppState { state -> state.copy(enableRootCaptureBoundNetworks = enabled) }
+                    },
+                    onEnableRootBlockEncryptedDnsChange = { enabled ->
+                        updateAppState { state -> state.copy(enableRootBlockEncryptedDns = enabled) }
                     },
                     onOpenExternalInterfaces = {
                         if (appState.runMode == RunModeTun) sheetState.openTunSharedNetwork(appState)

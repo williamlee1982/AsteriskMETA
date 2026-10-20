@@ -1180,7 +1180,7 @@ private fun RawConfigModeControl(
                 )
                 RawCapabilityRow(
                     title = stringResource(R.string.mihomo_profile_raw_dns_hijack),
-                    value = if (snapshot?.dnsHijack?.value?.proven == true) {
+                    value = if (snapshot?.dnsHijack?.value?.provenFor(runMode) == true) {
                         stringResource(R.string.mihomo_profile_raw_configured)
                     } else {
                         stringResource(R.string.mihomo_profile_raw_unavailable)
