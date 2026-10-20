@@ -114,8 +114,8 @@ files into notes, issues or screenshots.
       login URLs, auth keys, state files, or personal hostnames/IPs into the test record.
 - [ ] G7 Repeat G1–G5 in VPN and one ROOT mode (TPROXY or TUN), with IPv6 enabled and disabled;
       confirm the VPN lifecycle still performs no ROOT operation.
-- [ ] G8 Run against the currently pinned `tailscale.3` core: the toggle/card reports that the core
-      does not support inbound forwards. Do not treat an absent status field as an empty list.
+- [ ] G8 Run against an older core (`tailscale.3`, e.g. a local `-Pasterisk.libclash.localAar`
+      build): the toggle/card reports that the core does not support inbound forwards. Do not treat an absent status field as an empty list.
 
 ## F. Privacy
 

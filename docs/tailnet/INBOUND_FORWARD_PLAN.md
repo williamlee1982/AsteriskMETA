@@ -94,7 +94,8 @@ It's called from `putAsteriskRuntimeOverrides` (`MihomoProfile.kt`) next to `put
 
 ### Task A5: Pin core `tailscale.4`, docs, verification
 
-- [ ] `buildSrc/.../BuildConfig.kt` version + SHA-256 (verified by download).
+- [x] `buildSrc/.../BuildConfig.kt` version + SHA-256 (verified by download): `tailscale.4`,
+  `e72d2c8be88007fe5348621d57065f6a3ce3f477b08cdef91de381cc9dc57e22`.
 - [ ] `docs/tailnet/README.md`: "入站转发" section with a YAML + override-script example
   (generic values), an ACL example, and adb/sshd notes. Add device-test rows to
   `REGRESSION_CHECKLIST.md`.
