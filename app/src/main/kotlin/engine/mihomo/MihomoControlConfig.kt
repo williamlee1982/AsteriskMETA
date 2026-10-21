@@ -39,13 +39,21 @@ internal fun AppState.mihomoControlConfig(): MihomoControlConfig {
     )
 }
 
-internal fun AppState.withResolvedMihomoControlPort(): AppState {
+/**
+ * [ownedPort] is the controller port of the ROOT core this start replaces. That port is busy only
+ * because our own core still holds it (it is released by the stop before launch), so it must be
+ * kept instead of drifting to a random port on every restart.
+ */
+internal fun AppState.withResolvedMihomoControlPort(
+    ownedPort: Int? = null,
+    isPortAvailable: (Int) -> Boolean = { port -> isTcpPortAvailable(MihomoControlHost, port) },
+): AppState {
     val configuredPort = mihomoControlPort.toPortOrNull()
     val excludedPorts = mihomoControlExcludedPorts()
     val resolvedPort = when {
         configuredPort != null &&
             configuredPort !in excludedPorts &&
-            isTcpPortAvailable(MihomoControlHost, configuredPort) -> configuredPort
+            (configuredPort == ownedPort || isPortAvailable(configuredPort)) -> configuredPort
 
         else -> availableMihomoControlPort(excludedPorts) ?: configuredPort ?: DefaultMihomoControlPort
     }

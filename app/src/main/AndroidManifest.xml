@@ -153,6 +153,15 @@
         </service>
 
         <service
+            android:name="engine.root.keepalive.RootKeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps the app process alive while the user-enabled ROOT proxy core runs, so its status monitoring and recovery are not stopped by the system." />
+        </service>
+
+        <service
             android:name="engine.vpn.AsteriskVpnService"
             android:exported="false"
             android:permission="android.permission.BIND_VPN_SERVICE"

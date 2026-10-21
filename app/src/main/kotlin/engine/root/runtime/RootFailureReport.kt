@@ -29,9 +29,10 @@ import java.util.Locale
  * Everything here is best-effort. A field that cannot be read is omitted rather than failing
  * the report, because the report is only useful if it is produced at all.
  *
- * Scope note: the service log directory is cleaned by the ROOT publication step on every start,
- * so `error.log` and `asteriskd.log` describe the attempt that just failed. `logcat.log` is
- * cumulative, so only its tail is included.
+ * Scope note: the ROOT publication step appends to and rotates (`.1`/`.2`, 2 MiB) the service
+ * logs instead of clearing them, so only the tails of `error.log` and `asteriskd.log` are read;
+ * they end with the attempt that just failed. `logcat.log` is cumulative, so only its tail is
+ * included.
  */
 internal data class RootFailureReport(
     val deviceInfo: String,
@@ -144,8 +145,9 @@ internal data class RootFailureReport(
             layout: RootRuntimeLayout,
             occurredAtEpochMillis: Long,
         ): String {
-            // error.log and asteriskd.log describe the attempt that just failed and are cleared on
-            // every start, so they are the most valuable part of the report. They are collected
+            // The tails of error.log and asteriskd.log describe the attempt that just failed (the
+            // files are appended and rotated, not cleared, so earlier attempts and automatic
+            // supervisor restarts stay above), so they are the most valuable part of the report. They are collected
             // first and never truncated away; the cumulative app log fills whatever budget is
             // left, and only its newest lines survive because those sit nearest the failure.
             val attemptLogs = buildList {

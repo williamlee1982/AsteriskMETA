@@ -779,6 +779,9 @@
     <string name="settings_broadcast_control_summary">Allow external broadcasts to control app services</string>
 
     <!-- Statistics notifications -->
+    <string name="root_keepalive_notification_channel">ROOT proxy status</string>
+    <string name="root_keepalive_notification_title">ROOT proxy running</string>
+    <string name="root_keepalive_notification_text">AsteriskMETA keeps monitoring the ROOT core</string>
     <string name="proxy_traffic_stats_notification_channel">Proxy statistics</string>
     <string name="proxy_traffic_stats_notification_speed">Speed: ↑ %1$s / ↓ %2$s</string>
     <string name="proxy_traffic_stats_notification_title">Proxy statistics</string>
