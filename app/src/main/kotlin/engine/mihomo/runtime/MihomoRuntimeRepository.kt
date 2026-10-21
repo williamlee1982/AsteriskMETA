@@ -8,7 +8,7 @@ import android.content.Context
 import app.AppState
 import app.modes.RunModeVpnService
 import app.modes.isRootRunMode
-import engine.root.publication.withPublishedRootController
+import engine.root.publication.resolveRootControlEndpoint
 import engine.mihomo.hasUsableMihomoProfile
 import engine.mihomo.mihomoLogLevelName
 import engine.mihomo.mihomoControlConfig
@@ -762,14 +762,20 @@ internal class MihomoRuntimeRepository(
     private fun resolveMihomoControlConfig(appState: AppState): MihomoControlConfig {
         if (!appState.usesRawMihomoConfig()) {
             val configured = appState.mihomoControlConfig()
-            // ROOT only: the VPN path never reads ROOT publication state.
-            if (!appState.runMode.isRootRunMode() || !appState.proxyRunning) return configured
+            // ROOT only: the VPN path never reads ROOT publication state. Cold start resolves the
+            // controller before status sync restores proxyRunning, so the published endpoint is used
+            // whenever the run mode is ROOT.
+            if (!appState.runMode.isRootRunMode()) return configured
             val published = engine.root.publication.RootPublishedControllerReader.read(
                 java.io.File(appContext.mihomoResourceFilePaths().dataDir, "config.yaml"),
             )
-            val resolved = configured.withPublishedRootController(published)
-            if (resolved.port != configured.port) {
-                val signature = "published ROOT controller port ${resolved.port} (app state ${configured.port})"
+            val resolved = resolveRootControlEndpoint(
+                configured = configured,
+                rootMode = true,
+                published = published,
+            )
+            if (resolved.host != configured.host || resolved.port != configured.port) {
+                val signature = "published ROOT controller ${resolved.address} (app state ${configured.address})"
                 if (signature != lastLoggedControllerOverride) {
                     lastLoggedControllerOverride = signature
                     AndroidAppLogger.info(LogTag, "Using $signature")
@@ -902,27 +908,7 @@ internal class MihomoRuntimeRepository(
         generation: Long,
         configKey: Int,
     ) {
-        runCatching {
-            client.traffic(control, useBridge).collect { sample ->
-                if (!isRuntimeRequestCurrent(generation, configKey)) {
-                    throw CancellationException("Stale Mihomo traffic collector")
-                }
-                synchronized(trafficHistoryLock) { trafficHistory.append(sample) }
-                val updated = updateRuntimeStateIfCurrent(generation, configKey) { current ->
-                    current.copy(
-                        traffic = current.traffic.copy(
-                            latest = sample,
-                            totalUp = sample.totalUp ?: saturatedTrafficAdd(current.traffic.totalUp, sample.up),
-                            totalDown = sample.totalDown ?: saturatedTrafficAdd(current.traffic.totalDown, sample.down),
-                            connected = true,
-                        ),
-                    )
-                }
-                if (!updated) throw CancellationException("Stale Mihomo traffic collector")
-            }
-        }.onFailure { error ->
-            if (error is CancellationException) throw error
-            reportRuntimeError("Mihomo API /traffic", error)
+        val disconnect: (Throwable) -> Unit = { error ->
             updateRuntimeStateIfCurrent(generation, configKey) { current ->
                 current.copy(
                     traffic = current.traffic.copy(connected = false),
@@ -930,6 +916,43 @@ internal class MihomoRuntimeRepository(
                 )
             }
         }
+        retryTrafficCollection(
+            stillCurrent = { isRuntimeRequestCurrent(generation, configKey) },
+            onFailure = { error ->
+                if (error != null) {
+                    reportRuntimeError("Mihomo API /traffic", error)
+                    disconnect(error)
+                } else {
+                    updateRuntimeStateIfCurrent(generation, configKey) { current ->
+                        current.copy(traffic = current.traffic.copy(connected = false))
+                    }
+                }
+            },
+            collectOnce = { markHealthy ->
+                client.traffic(
+                    config = control,
+                    useBridge = useBridge,
+                    onHardFailure = disconnect,
+                ).collect { sample ->
+                    if (!isRuntimeRequestCurrent(generation, configKey)) {
+                        throw CancellationException("Stale Mihomo traffic collector")
+                    }
+                    synchronized(trafficHistoryLock) { trafficHistory.append(sample) }
+                    val updated = updateRuntimeStateIfCurrent(generation, configKey) { current ->
+                        current.copy(
+                            traffic = current.traffic.copy(
+                                latest = sample,
+                                totalUp = sample.totalUp ?: saturatedTrafficAdd(current.traffic.totalUp, sample.up),
+                                totalDown = sample.totalDown ?: saturatedTrafficAdd(current.traffic.totalDown, sample.down),
+                                connected = true,
+                            ),
+                        )
+                    }
+                    if (!updated) throw CancellationException("Stale Mihomo traffic collector")
+                    markHealthy()
+                }
+            },
+        )
     }
 
     private suspend fun pollRuntime(
@@ -1148,6 +1171,41 @@ internal class MihomoRuntimeRepository(
     }
 }
 
+/** 1s, 2s, 4s, 8s, then 16s. One connect or read failure must not stop the collector. */
+internal fun trafficCollectionRetryDelayMillis(consecutiveFailures: Int): Long {
+    val exponent = (consecutiveFailures - 1).coerceIn(0, 4)
+    return 1_000L shl exponent
+}
+
+/**
+ * Resubscribes after [collectOnce] fails or the stream ends while [stillCurrent] is true.
+ * Cancellation and a collector that is no longer current stop the loop, so recovery does not
+ * require [MihomoRuntimeRepository.start].
+ */
+internal suspend fun retryTrafficCollection(
+    stillCurrent: () -> Boolean,
+    onFailure: (Throwable?) -> Unit,
+    collectOnce: suspend (markHealthy: () -> Unit) -> Unit,
+    sleep: suspend (Long) -> Unit = { delayMillis -> delay(delayMillis.milliseconds) },
+) {
+    var consecutiveFailures = 0
+    while (currentCoroutineContext().isActive && stillCurrent()) {
+        val failure = try {
+            collectOnce { consecutiveFailures = 0 }
+            null
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            error
+        }
+        if (!currentCoroutineContext().isActive || !stillCurrent()) return
+        consecutiveFailures += 1
+        onFailure(failure)
+        if (!currentCoroutineContext().isActive || !stillCurrent()) return
+        sleep(trafficCollectionRetryDelayMillis(consecutiveFailures))
+    }
+}
+
 private fun saturatedTrafficAdd(previous: Long, increment: Long): Long {
     if (previous < 0L || increment <= 0L) return previous.coerceAtLeast(0L)
     return if (Long.MAX_VALUE - previous < increment) Long.MAX_VALUE else previous + increment
@@ -1162,7 +1220,7 @@ private fun MihomoRuntimeBackend.useBridge(): Boolean {
     return this == MihomoRuntimeBackend.Bridge
 }
 
-private fun Throwable.isTransientControlConnectionFailure(): Boolean {
+internal fun Throwable.isTransientControlConnectionFailure(): Boolean {
     var current: Throwable? = this
     while (current != null) {
         if (current is ConnectException) {

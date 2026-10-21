@@ -20,6 +20,7 @@ import engine.mihomo.tailscale.parseTailscaleLoginUrl
 import engine.mihomo.tailscale.redactTailnetSecrets
 import engine.mihomo.MihomoControlConfig
 import engine.vpn.AndroidMihomoRuntime
+import features.logs.AndroidAppLogger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -68,6 +69,9 @@ internal class MihomoControlClient(
     private val bridgeProxySnapshot: () -> String = Clash::queryProxies,
     private val bridgeGroupDelay: MihomoBridgeGroupDelay = Clash::queryGroupDelay,
 ) {
+    @Volatile
+    private var lastTrafficStreamFailure = ""
+
     fun isApiAvailable(config: MihomoControlConfig): Boolean {
         return runCatching {
             request(
@@ -549,7 +553,11 @@ internal class MihomoControlClient(
         ).withMissingMeasurements(proxyIds)
     }
 
-    fun traffic(config: MihomoControlConfig, useBridge: Boolean): Flow<MihomoTrafficSample> = flow {
+    fun traffic(
+        config: MihomoControlConfig,
+        useBridge: Boolean,
+        onHardFailure: (Throwable) -> Unit = {},
+    ): Flow<MihomoTrafficSample> = flow {
         while (currentCoroutineContext().isActive && useBridge) {
             val sample = runCatching {
                 val now = Clash.queryTrafficNow().toTrafficBytes()
@@ -570,9 +578,12 @@ internal class MihomoControlClient(
         if (useBridge) {
             return@flow
         }
+        var consecutiveHardFailures = 0
         while (currentCoroutineContext().isActive) {
-            val connection = openConnection(config, "/traffic", readTimeoutMillis = TrafficReadTimeoutMillis)
+            var hardFailure: Throwable? = null
+            var connection: HttpURLConnection? = null
             try {
+                connection = openConnection(config, "/traffic", readTimeoutMillis = TrafficReadTimeoutMillis)
                 val status = connection.responseCode
                 val stream = if (status in 200..299) connection.inputStream else connection.errorStream
                 if (status !in 200..299) {
@@ -583,18 +594,55 @@ internal class MihomoControlClient(
                     while (currentCoroutineContext().isActive) {
                         val line = reader.readNextNonBlankLine() ?: break
                         val sample = parseTrafficLine(line) ?: continue
+                        consecutiveHardFailures = 0
+                        noteTrafficStreamRecovered()
                         emit(sample)
                     }
                 }
-            } catch (error: IOException) {
-                if (!error.isExpectedMihomoStreamEnd()) {
-                    throw error
+            } catch (error: java.util.concurrent.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (!currentCoroutineContext().isActive) throw error
+                when {
+                    error.isHardTrafficStreamFailure() -> hardFailure = error
+                    error is IOException -> Unit
+                    else -> throw error
                 }
             } finally {
-                connection.disconnect()
+                connection?.disconnect()
             }
-            delay(StreamReconnectDelayMillis.milliseconds)
+            if (!currentCoroutineContext().isActive) return@flow
+            if (hardFailure != null) {
+                consecutiveHardFailures += 1
+                noteTrafficStreamFailure(hardFailure)
+                onHardFailure(hardFailure)
+                delay(trafficCollectionRetryDelayMillis(consecutiveHardFailures).milliseconds)
+            } else {
+                consecutiveHardFailures = 0
+                delay(StreamReconnectDelayMillis.milliseconds)
+            }
         }
+    }
+
+    private fun noteTrafficStreamFailure(error: Throwable) {
+        val message = error.message?.takeIf(String::isNotBlank) ?: error.javaClass.simpleName
+        val transient = error.isTransientControlConnectionFailure()
+        val signature = if (transient) {
+            "Mihomo control API unavailable: $message"
+        } else {
+            "Mihomo API /traffic: $message"
+        }
+        if (signature == lastTrafficStreamFailure) return
+        lastTrafficStreamFailure = signature
+        if (transient) {
+            AndroidAppLogger.debug(LogTag, signature)
+        } else {
+            AndroidAppLogger.warn(LogTag, "Mihomo API /traffic failed: $message", error)
+        }
+    }
+
+    private fun noteTrafficStreamRecovered() {
+        lastTrafficStreamFailure = ""
     }
 
     private fun parseTrafficLine(line: String): MihomoTrafficSample? {
@@ -714,6 +762,7 @@ internal class MihomoControlClient(
     }
 
     private companion object {
+        const val LogTag = "MihomoRuntime"
         val RuntimeJson = Json {
             ignoreUnknownKeys = true
             encodeDefaults = true
@@ -760,12 +809,16 @@ internal fun Iterable<Provider>.queryMihomoRuleProviderSummaries(
 }
 
 private suspend fun IOException.isExpectedMihomoStreamEnd(): Boolean {
-    return currentCoroutineContext().isActive && when (this) {
-        is EOFException,
-        is SocketTimeoutException -> true
-        is SocketException -> message.isExpectedStreamCloseMessage()
-        else -> message.isExpectedStreamCloseMessage()
-    }
+    return currentCoroutineContext().isActive && !isHardTrafficStreamFailure()
+}
+
+/** Connect and HTTP failures retry with backoff. Read timeouts and clean stream closes do not. */
+internal fun Throwable.isHardTrafficStreamFailure(): Boolean = when (this) {
+    is java.util.concurrent.CancellationException -> false
+    is EOFException, is SocketTimeoutException -> false
+    is IOException -> !message.isExpectedStreamCloseMessage()
+    is IllegalStateException -> true
+    else -> false
 }
 
 private fun BufferedReader.readNextNonBlankLine(): String? {

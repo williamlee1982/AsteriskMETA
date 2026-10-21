@@ -10,15 +10,17 @@ import java.io.File
  *
  * The control port is resolved at every ROOT start: when the configured port is still held (for
  * example by the core being replaced) a random free port is chosen. App-side state can lag behind
- * that choice (process killed before persistence, boot-script start, resume after a kill), which
- * made the app poll a dead port (`127.0.0.1:33279` while the core listened on `:35277`). The
- * published `config.yaml` is the source of truth for the running ROOT core, so readers prefer it.
+ * that choice (process killed before persistence, boot-script start, resume after a kill, or
+ * `proxyRunning` still false on cold start), which made the app poll a dead port
+ * (`127.0.0.1:33279` while the core listened on `:35277`). The published `config.yaml` is the
+ * source of truth for the running ROOT core, so readers prefer it.
  */
 internal data class RootPublishedController(
     val port: Int,
     val secret: String?,
+    val host: String? = null,
 ) {
-    override fun toString(): String = "RootPublishedController(port=$port, secret=<redacted>)"
+    override fun toString(): String = "RootPublishedController(host=$host, port=$port, secret=<redacted>)"
 }
 
 internal object RootPublishedControllerReader {
@@ -53,13 +55,25 @@ internal object RootPublishedControllerReader {
             }
             if (controller != null && secret != null) break
         }
-        val port = controller
-            ?.substringAfterLast(':', missingDelimiterValue = "")
-            ?.toIntOrNull()
+        val endpoint = controller?.let(::parseControllerEndpoint) ?: return null
+        return RootPublishedController(port = endpoint.port, secret = secret, host = endpoint.host)
+    }
+
+    private fun parseControllerEndpoint(raw: String): ControllerEndpoint? {
+        val value = raw.trim()
+        val port = value.substringAfterLast(':', missingDelimiterValue = "")
+            .toIntOrNull()
             ?.takeIf { it in 1..65535 }
             ?: return null
-        return RootPublishedController(port = port, secret = secret)
+        val host = value.substringBeforeLast(':', missingDelimiterValue = "")
+            .trim()
+            .removeSurrounding("[", "]")
+            .trim()
+            .takeIf { it.isNotEmpty() }
+        return ControllerEndpoint(host = host, port = port)
     }
+
+    private data class ControllerEndpoint(val host: String?, val port: Int)
 
     private fun scalar(raw: String): String {
         val value = raw.trim()
@@ -73,12 +87,36 @@ internal object RootPublishedControllerReader {
     }
 }
 
-/** Prefer the endpoint the running ROOT core was published with over possibly stale app state. */
+/**
+ * Prefer the endpoint the running ROOT core was published with over possibly stale app state.
+ * A wildcard bind (`0.0.0.0`, `::`) is not a client address; the caller keeps its loopback host.
+ */
 internal fun engine.mihomo.MihomoControlConfig.withPublishedRootController(
     published: RootPublishedController?,
 ): engine.mihomo.MihomoControlConfig {
     if (published == null) return this
     val publishedSecret = published.secret ?: secret
-    if (published.port == port && publishedSecret == secret) return this
-    return copy(port = published.port, secret = publishedSecret)
+    val publishedHost = published.clientHost() ?: host
+    if (publishedHost == host && published.port == port && publishedSecret == secret) return this
+    return copy(host = publishedHost, port = published.port, secret = publishedSecret)
+}
+
+/**
+ * ROOT control follows the published endpoint whenever the run mode is ROOT.
+ * Running state is not an input: after process death it stays false until status sync, while
+ * `config.yaml` already names the live controller.
+ */
+internal fun resolveRootControlEndpoint(
+    configured: engine.mihomo.MihomoControlConfig,
+    rootMode: Boolean,
+    published: RootPublishedController?,
+): engine.mihomo.MihomoControlConfig {
+    if (!rootMode) return configured
+    return configured.withPublishedRootController(published)
+}
+
+private fun RootPublishedController.clientHost(): String? {
+    val value = host?.trim().orEmpty()
+    if (value.isEmpty() || value == "0.0.0.0" || value == "::" || value == "*") return null
+    return value
 }
