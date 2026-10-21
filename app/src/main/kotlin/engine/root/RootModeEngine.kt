@@ -16,6 +16,18 @@ import engine.root.mode.RootModeDefinition
 import engine.root.mode.DefaultTproxyPort as ModeDefaultTproxyPort
 import engine.root.mode.DefaultTun2SocksProxyPort as ModeDefaultTun2SocksProxyPort
 import engine.root.publication.rootRuntimeLayout
+import engine.mihomo.MihomoControlConfig
+import engine.mihomo.runtime.MihomoControlClient
+import engine.root.daemon.config.AsteriskdConfigEncoder
+import engine.root.dns.withRootDnsMutation
+import engine.root.publication.RootPublicationWriter
+import engine.root.publication.RootPublishedControllerReader
+import engine.root.publication.prepareRootPublicationDirectories
+import engine.root.publication.publishRootProviderUpdates
+import engine.root.runtime.RootConfigChangePlan
+import engine.root.runtime.planRootConfigChange
+import features.logs.AndroidAppLogger
+import java.io.File
 import engine.root.runtime.RootFailureWatcher
 import engine.root.runtime.RootFailureAnalyzer
 import engine.root.runtime.RootFailureReport
@@ -51,7 +63,64 @@ internal class RootModeEngine(
     }
 
     suspend fun restart(request: ProxyEngineStartRequest): ProxyEngineStatus {
+        applyWithoutRestart(request)?.let { return it }
         return start(request, explicitRestart = true, resumeAlreadyChecked = false)
+    }
+
+    /**
+     * A requested restart of a running AsteriskMETA core first compares what would be published
+     * with what the core and asteriskd are running. Identical configuration is a no-op; a change
+     * the Clash API can apply is hot-reloaded (`PUT /configs?force=true`) so rules, routes and
+     * open connections survive. Returns `null` when a supervised restart is required or the hot
+     * path failed (the caller then restarts as before).
+     */
+    private suspend fun applyWithoutRestart(request: ProxyEngineStartRequest): ProxyEngineStatus? {
+        if (!rootAccess.hasRootAccess()) return null
+        val running = runCatching {
+            controller.preflightStart(definition.daemonMode, explicitRestart = false)
+        }.getOrElse { error ->
+            if (error is CancellationException) throw error
+            null
+        } ?: return null
+        val layout = context.rootRuntimeLayout()
+        return try {
+            val config = definition.buildConfig(context.prepareRootConfigBuildContext(request))
+            if (config.asteriskdConfig.mode != definition.daemonMode) return null
+            val nextDaemon = AsteriskdConfigEncoder.encode(config.asteriskdConfig).toByteArray(Charsets.UTF_8)
+            val currentProfile = runCatching { File(layout.configPath).readBytes() }.getOrNull()
+            val currentDaemon = runCatching { File(layout.asteriskdConfigPath).readBytes() }.getOrNull()
+            val plan = planRootConfigChange(currentProfile, currentDaemon, config.root.mihomoProfileBytes, nextDaemon)
+            runCatching { AndroidAppLogger.info(LogTag, "root_restart plan=${plan.name}") }
+            when (plan) {
+                RootConfigChangePlan.Restart -> return null
+                RootConfigChangePlan.NoOp -> Unit
+                RootConfigChangePlan.HotReload -> {
+                    val published = RootPublishedControllerReader.parse(
+                        requireNotNull(currentProfile).toString(Charsets.UTF_8).lineSequence(),
+                    ) ?: return null
+                    val control = MihomoControlConfig(port = published.port, secret = published.secret.orEmpty())
+                    context.prepareRootPublicationDirectories()
+                    RootPublicationWriter.write(layout, config.root.mihomoProfileBytes, nextDaemon)
+                    context.withRootDnsMutation(request.appState) {
+                        if (config.root.manageProviders) context.publishRootProviderUpdates()
+                        MihomoControlClient().reloadProfile(
+                            config = control,
+                            profilePath = layout.configPath,
+                            reloadLocally = false,
+                        )
+                    }
+                    runCatching { AndroidAppLogger.info(LogTag, "root_restart hot_reload=ok") }
+                }
+            }
+            config.localProxyOptions?.let(LocalProxyRuntime::update) ?: LocalProxyRuntime.clear()
+            controller.proxyStatus(running, runMode, definition.daemonMode)
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            runCatching {
+                AndroidAppLogger.warn(LogTag, "root_restart hot_reload=failed type=${error.javaClass.simpleName}; falling back to supervised restart")
+            }
+            null
+        }
     }
 
     suspend fun resumeIfRunning(request: ProxyEngineStartRequest): ProxyEngineStatus? {
@@ -179,3 +248,5 @@ internal class RootModeEngine(
         }
     }
 }
+
+private const val LogTag = "RootModeEngine"

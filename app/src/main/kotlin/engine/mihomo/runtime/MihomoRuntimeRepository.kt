@@ -8,6 +8,7 @@ import android.content.Context
 import app.AppState
 import app.modes.RunModeVpnService
 import app.modes.isRootRunMode
+import engine.root.publication.withPublishedRootController
 import engine.mihomo.hasUsableMihomoProfile
 import engine.mihomo.mihomoLogLevelName
 import engine.mihomo.mihomoControlConfig
@@ -89,6 +90,7 @@ internal class MihomoRuntimeRepository(
     private var proxySnapshotConfigKey: Int? = null
     @Volatile
     private var lastLoggedRuntimeError = ""
+    private var lastLoggedControllerOverride = ""
 
     val state: StateFlow<MihomoRuntimeState> = mutableState.asStateFlow()
 
@@ -758,7 +760,23 @@ internal class MihomoRuntimeRepository(
     }
 
     private fun resolveMihomoControlConfig(appState: AppState): MihomoControlConfig {
-        if (!appState.usesRawMihomoConfig()) return appState.mihomoControlConfig()
+        if (!appState.usesRawMihomoConfig()) {
+            val configured = appState.mihomoControlConfig()
+            // ROOT only: the VPN path never reads ROOT publication state.
+            if (!appState.runMode.isRootRunMode() || !appState.proxyRunning) return configured
+            val published = engine.root.publication.RootPublishedControllerReader.read(
+                java.io.File(appContext.mihomoResourceFilePaths().dataDir, "config.yaml"),
+            )
+            val resolved = configured.withPublishedRootController(published)
+            if (resolved.port != configured.port) {
+                val signature = "published ROOT controller port ${resolved.port} (app state ${configured.port})"
+                if (signature != lastLoggedControllerOverride) {
+                    lastLoggedControllerOverride = signature
+                    AndroidAppLogger.info(LogTag, "Using $signature")
+                }
+            }
+            return resolved
+        }
         require(appState.proxyRunning) { "Raw configuration API is available only while the proxy service is running" }
         val parsed = appContext.loadSelectedRawConfig(appState)
             ?: error("Raw configuration is not available")

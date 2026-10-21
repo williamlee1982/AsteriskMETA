@@ -63,15 +63,36 @@ internal object RootPublicationCommand {
         appendLine("fi")
     }
 
+    /**
+     * ROOT service logs are kept across starts so a crash, an automatic supervisor restart or a
+     * kill can still be diagnosed afterwards. Each log rotates to `.1`/`.2` once it exceeds
+     * [RootServiceLogRotateBytes]; otherwise new output is appended. A start marker separates
+     * attempts. Only regular, non-symlink files directly inside the log directory are touched.
+     */
+    internal fun buildServiceLogRotation(layout: RootRuntimeLayout): String =
+        buildString { appendServiceLogCleanup(layout) }
+
     private fun StringBuilder.appendServiceLogCleanup(layout: RootRuntimeLayout) {
-        appendLine(
-            "for service_log in ${layout.logDirectoryPath.shellQuote()}/* " +
-                "${layout.logDirectoryPath.shellQuote()}/.[!.]* ${layout.logDirectoryPath.shellQuote()}/..?*; do",
-        )
+        val directory = layout.logDirectoryPath.shellQuote()
+        appendLine("service_log_stamp=\"$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || echo unknown-time)\"")
+        appendLine("for service_log_name in ${RootRotatedServiceLogs.joinToString(" ")}; do")
+        appendLine("  service_log=$directory/\"\$service_log_name\"")
         appendLine("  [ -e \"\$service_log\" ] || continue")
-        appendLine("  [ \"\${service_log##*/}\" = 'logcat.log' ] && continue")
         appendLine("  [ -f \"\$service_log\" ] && [ ! -L \"\$service_log\" ] || continue")
-        appendLine("  rm -f -- \"\$service_log\" >/dev/null 2>&1 || { printf '%s\\n' \"$RootServiceLogCleanupWarningPrefix\$service_log\" >&2 || :; }")
+        appendLine("  service_log_size=\"$(wc -c < \"\$service_log\" 2>/dev/null || echo 0)\"")
+        appendLine("  service_log_size=\"\${service_log_size##* }\"")
+        appendLine("  case \"\$service_log_size\" in ''|*[!0-9]*) service_log_size=0 ;; esac")
+        appendLine("  if [ \"\$service_log_size\" -gt $RootServiceLogRotateBytes ]; then")
+        appendLine("    if [ -f \"\$service_log.1\" ] && [ ! -L \"\$service_log.1\" ] && { [ ! -e \"\$service_log.2\" ] || { [ -f \"\$service_log.2\" ] && [ ! -L \"\$service_log.2\" ]; }; }; then")
+        appendLine("      mv -f -- \"\$service_log.1\" \"\$service_log.2\" >/dev/null 2>&1 || :")
+        appendLine("    fi")
+        appendLine("    if [ ! -e \"\$service_log.1\" ] || { [ -f \"\$service_log.1\" ] && [ ! -L \"\$service_log.1\" ]; }; then")
+        appendLine("      mv -f -- \"\$service_log\" \"\$service_log.1\" >/dev/null 2>&1 || { printf '%s\\n' \"$RootServiceLogCleanupWarningPrefix\$service_log\" >&2 || :; }")
+        appendLine("    fi")
+        appendLine("  fi")
+        appendLine("  if [ -f \"\$service_log\" ] && [ ! -L \"\$service_log\" ]; then")
+        appendLine("    printf '\\n===== AsteriskMETA ROOT start %s =====\\n' \"\$service_log_stamp\" >> \"\$service_log\" 2>/dev/null || :")
+        appendLine("  fi")
         appendLine("done")
     }
 
@@ -110,7 +131,11 @@ internal object RootPublicationCommand {
 }
 
 private const val SocketReleasePollAttempts = 50
-internal const val RootServiceLogCleanupWarningPrefix = "Failed to clear service log: "
+internal const val RootServiceLogCleanupWarningPrefix = "Failed to rotate service log: "
+
+/** Rotate a ROOT service log once it grows past 2 MiB; `.1` and `.2` generations are kept. */
+internal const val RootServiceLogRotateBytes = 2L * 1024L * 1024L
+internal val RootRotatedServiceLogs = listOf("error.log", "asteriskd.log")
 
 internal val RootPublicationRequiredTools = listOf(
     "grep",
@@ -121,4 +146,6 @@ internal val RootPublicationRequiredTools = listOf(
     "nohup",
     "cp",
     "find",
+    "mv",
+    "wc",
 )

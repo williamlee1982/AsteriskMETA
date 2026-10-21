@@ -768,6 +768,9 @@
     <string name="settings_broadcast_control_summary">允许外部广播控制应用服务</string>
 
     <!-- Statistics notifications -->
+    <string name="root_keepalive_notification_channel">ROOT 代理状态</string>
+    <string name="root_keepalive_notification_title">ROOT 代理运行中</string>
+    <string name="root_keepalive_notification_text">AsteriskMETA 正在监控 ROOT 核心</string>
     <string name="proxy_traffic_stats_notification_channel">代理统计</string>
     <string name="proxy_traffic_stats_notification_speed">速度：↑ %1$s / ↓ %2$s</string>
     <string name="proxy_traffic_stats_notification_title">代理统计</string>

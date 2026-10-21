@@ -7,11 +7,13 @@ import android.content.Context
 import app.modes.RunModeVpnService
 import engine.proxy.mode.AndroidModeProxyEngine
 import engine.root.RootModeEngine
+import engine.root.keepalive.RootKeepAliveService
 import engine.root.runtime.model.RootRuntimeMode
 import engine.root.runtime.model.RootRuntimeOwner
 import engine.stats.MihomoTrafficStatsNotificationService
 import engine.stats.toMihomoTrafficStatsRuntime
 import engine.mihomo.withResolvedMihomoControlPort
+import engine.root.publication.rootRuntimeLayout
 import engine.mihomo.MihomoProfileFactory
 import engine.mihomo.raw.requireStartableRawConfig
 import engine.mihomo.raw.usesRawMihomoConfig
@@ -173,24 +175,31 @@ internal class AndroidProxyEngine(
             requestedEngine.resumeIfRunning(validatedRequest)?.let { status ->
                 activeEngine = requestedEngine
                 val resumed = status.copy(appState = request.appState)
-                MihomoTrafficStatsNotificationService.reconcile(
-                    appContext,
-                    validatedRequest.appState.toMihomoTrafficStatsRuntime(
-                        runMode = status.runMode ?: validatedRequest.appState.runMode,
-                        rawConfig = validatedRequest.rawConfig,
-                    ),
+                val resumedStats = validatedRequest.appState.toMihomoTrafficStatsRuntime(
+                    runMode = status.runMode ?: validatedRequest.appState.runMode,
+                    rawConfig = validatedRequest.rawConfig,
                 )
+                MihomoTrafficStatsNotificationService.reconcile(appContext, resumedStats)
+                reconcileRootKeepAlive(status.runMode ?: validatedRequest.appState.runMode, status.running, resumedStats != null)
                 return@withContext resumed
             }
             rootResumeChecked = true
         }
         // Resolve runtime ports, build, and validate the exact final profile before
         // notifications, engine replacement, VPN permission, Root commands, or routing changes.
+        // A ROOT restart replaces our own running core: keep its controller port.
+        val ownedControlPort = if (requestedEngine is RootModeEngine && activeEngine is RootModeEngine) {
+            engine.root.publication.RootPublishedControllerReader.read(
+                java.io.File(appContext.rootRuntimeLayout().configPath),
+            )?.port
+        } else {
+            null
+        }
         val resolvedRequest = validatedRequest.prepareNormalMihomoProfile(
             resolveAppState = { appState ->
                 appState
                     .withResolvedDynamicLocalProxyPort()
-                    .withResolvedMihomoControlPort()
+                    .withResolvedMihomoControlPort(ownedPort = ownedControlPort)
             },
             buildProfileBytes = { appState ->
                 MihomoProfileFactory.buildProfileBytes(appContext, appState)
@@ -235,9 +244,11 @@ internal class AndroidProxyEngine(
                 null
             }
             MihomoTrafficStatsNotificationService.reconcile(appContext, runtime)
+            reconcileRootKeepAlive(status.runMode ?: resolvedRequest.appState.runMode, status.running, runtime != null)
             status
         } catch (error: Throwable) {
             MihomoTrafficStatsNotificationService.reconcile(appContext, null)
+            RootKeepAliveService.reconcile(appContext, active = false)
             throw error
         }
     }
@@ -248,6 +259,7 @@ internal class AndroidProxyEngine(
         engine?.stop()
         activeEngine = null
         MihomoTrafficStatsNotificationService.reconcile(appContext, null)
+        RootKeepAliveService.reconcile(appContext, active = false)
         ProxyEngineStatus(running = false, runMode = stoppedMode)
     }
 
@@ -259,6 +271,7 @@ internal class AndroidProxyEngine(
         val status = engine.stop()
         activeEngine = null
         MihomoTrafficStatsNotificationService.reconcile(appContext, null)
+        RootKeepAliveService.reconcile(appContext, active = false)
         status
     }
 
@@ -271,6 +284,7 @@ internal class AndroidProxyEngine(
             val status = if (engine is RootModeEngine) engine.shutdown() else engine.stop()
             activeEngine = null
             MihomoTrafficStatsNotificationService.reconcile(appContext, null)
+            RootKeepAliveService.reconcile(appContext, active = false)
             status
         }
 
@@ -371,7 +385,17 @@ internal class AndroidProxyEngine(
         if (!running || appState?.enableTrafficStatsNotification == false) {
             MihomoTrafficStatsNotificationService.reconcile(appContext, null)
         }
+        // The ROOT keep-alive is not released by status reads: during an automatic supervisor
+        // restart the core is briefly not running and the process must stay protected.
         return this
+    }
+
+    /** ROOT has no VPN service; keep a foreground service while its core runs (no ROOT IO). */
+    private fun reconcileRootKeepAlive(runMode: Int, running: Boolean, trafficStatsActive: Boolean) {
+        RootKeepAliveService.reconcile(
+            appContext,
+            RootKeepAliveService.shouldRun(runMode, running, trafficStatsActive),
+        )
     }
 }
 
