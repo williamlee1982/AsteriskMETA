@@ -25,6 +25,7 @@ import engine.root.publication.RootPublicationWriter
 import engine.root.publication.RootPublicationLaunchMode
 import engine.root.publication.RootServiceLogCleanupWarningPrefix
 import engine.root.publication.prepareRootPublicationDirectories
+import engine.root.daemon.control.AsteriskdHelperType
 import engine.root.publication.rootRuntimeLayout
 import features.logs.AndroidAppLogger
 import features.logs.clearServiceLogRepositories
@@ -78,9 +79,41 @@ internal class RootSupervisorController(
         snapshot.requireRunning(AsteriskdOwner.AsteriskMeta, expectedMode)
     }
 
+    suspend fun ownRunningSnapshotOrNull(): AsteriskdSnapshot? {
+        val snapshot = try {
+            status().boundSnapshot()
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return null
+        } ?: return null
+        if (snapshot.owner != AsteriskdOwner.AsteriskMeta) return null
+        if (snapshot.phase != AsteriskdPhase.Running) return null
+        return snapshot
+    }
+
+    suspend fun classifyInstalledBinaries(snapshot: AsteriskdSnapshot): RootBinaryClassification {
+        val helperPath = when (snapshot.helperType) {
+            AsteriskdHelperType.HevSocks5Tunnel -> runtimeLayout.hevSocks5TunnelPath
+            AsteriskdHelperType.Bpf2Socks -> runtimeLayout.bpf2socksPath
+            null -> null
+        }
+        return RootNativeBinaryProbe(shell).classify(
+            rootProcessProbeTargets(
+                supervisorPid = snapshot.supervisorPid,
+                asteriskdPath = runtimeLayout.asteriskdPath,
+                corePid = snapshot.corePid,
+                corePath = runtimeLayout.mihomoCorePath,
+                helperPid = snapshot.helperPid,
+                helperPath = helperPath,
+            ),
+        )
+    }
+
     suspend fun start(
         root: RootStartConfig,
         config: AsteriskdConfig,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume,
     ): AsteriskdSnapshot {
         RootFailureWatcher.beginAttempt()
         status().boundSnapshot()?.let { snapshot ->
@@ -89,21 +122,23 @@ internal class RootSupervisorController(
                 observeRunningFailure(snapshot, explicitRootAction = true)
                 return snapshot
             }
-            if (disposition.shutdownBeforeLaunch) shutdownOwn()
+            if (disposition.shutdownBeforeLaunch) shutdownOwn(trigger)
             return launch(
                 root = root,
                 config = config,
                 restartExpectedOwner = snapshot.owner,
                 launchMode = RootPublicationLaunchMode.Service,
+                trigger = trigger,
             )
         }
 
-        return launch(root, config, restartExpectedOwner = null, RootPublicationLaunchMode.Service)
+        return launch(root, config, restartExpectedOwner = null, RootPublicationLaunchMode.Service, trigger)
     }
 
     suspend fun restart(
         root: RootStartConfig,
         config: AsteriskdConfig,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume,
     ): AsteriskdSnapshot {
         RootFailureWatcher.beginAttempt()
         val snapshot = status().boundSnapshot()
@@ -115,12 +150,14 @@ internal class RootSupervisorController(
             config = config,
             restartExpectedOwner = snapshot?.owner,
             launchMode = RootPublicationLaunchMode.Service,
+            trigger = trigger,
         )
     }
 
     suspend fun reconfigureServiceControl(
         root: RootStartConfig,
         config: AsteriskdConfig,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume,
     ): Boolean {
         RootFailureWatcher.beginAttempt()
         val snapshot = status().boundSnapshot()
@@ -132,19 +169,21 @@ internal class RootSupervisorController(
         } catch (_: IllegalArgumentException) {
             throw RootRuntimeBusyException(requireNotNull(snapshot))
         }
-        if (plan.shutdownRequired) shutdownOwn()
+        if (plan.shutdownRequired) shutdownOwn(trigger)
         when (plan.launchMode) {
             RootPublicationLaunchMode.Service -> launch(
                 root,
                 config,
                 restartExpectedOwner = snapshot?.owner,
                 launchMode = RootPublicationLaunchMode.Service,
+                trigger = trigger,
             )
             RootPublicationLaunchMode.Monitor -> launch(
                 root,
                 config,
                 restartExpectedOwner = snapshot?.owner,
                 launchMode = RootPublicationLaunchMode.Monitor,
+                trigger = trigger,
             )
             RootPublicationLaunchMode.None -> RootFailureWatcher.stop()
         }
@@ -156,10 +195,11 @@ internal class RootSupervisorController(
         config: AsteriskdConfig,
         restartExpectedOwner: AsteriskdOwner?,
         launchMode: RootPublicationLaunchMode,
+        trigger: RootLifecycleTrigger,
     ): AsteriskdSnapshot {
         var stage = "prepare_directories"
         RootFailureWatcher.ensureStarted(appContext, shell, runtimeLayout, explicitRootAction = true, running = false)
-        runCatching { AndroidAppLogger.info(LogTag, "root_start mode=${config.mode.wireValue} launch=$launchMode stage=$stage") }
+        runCatching { AndroidAppLogger.info(LogTag, "root_start trigger=${trigger.wire} mode=${config.mode.wireValue} launch=$launchMode stage=$stage") }
         try {
             preparePublication()
             stage = "encode_config"
@@ -183,7 +223,7 @@ internal class RootSupervisorController(
             }
             stage = "config_write"
             RootPublicationWriter.write(runtimeLayout, root.mihomoProfileBytes, daemonConfigBytes)
-            runCatching { AndroidAppLogger.info(LogTag, "root_start stage=config_write result=ok") }
+            runCatching { AndroidAppLogger.info(LogTag, "root_start trigger=${trigger.wire} stage=config_write result=ok") }
             stage = "launch"
             val launchResult = mihomoCoreFetchLock.withLock {
                 shell.exec(
@@ -195,7 +235,7 @@ internal class RootSupervisorController(
                 throw launchFailure(launchResult)
             }
             stage = "await_ready"
-            runCatching { AndroidAppLogger.info(LogTag, "root_start stage=launch result=sent") }
+            runCatching { AndroidAppLogger.info(LogTag, "root_start trigger=${trigger.wire} stage=launch result=sent") }
             if (launchMode == RootPublicationLaunchMode.Service) warnAboutPrivateDns(root)
             // The supervisor bounds each start stage itself and ends in running/failed; the app
             // waits for that terminal state (re-watching while it progresses) up to a hard cap.
@@ -210,7 +250,7 @@ internal class RootSupervisorController(
                 }
             } ?: run {
                 // Do not leave a half-started supervisor behind once the app has given up.
-                withContext(NonCancellable) { runCatching { stopOwn() } }
+                withContext(NonCancellable) { runCatching { stopOwn(trigger) } }
                 throw IllegalStateException("asteriskd did not reach the requested phase before timeout")
             }
             if (snapshot.owner != AsteriskdOwner.AsteriskMeta) throw RootRuntimeConflictException(snapshot)
@@ -221,17 +261,18 @@ internal class RootSupervisorController(
                 // A resident supervisor waiting for a trigger has no running core to monitor.
                 RootFailureWatcher.stop()
             }
-            runCatching { AndroidAppLogger.info(LogTag, "root_start stage=ready phase=${snapshot.phase}") }
+            runCatching { AndroidAppLogger.info(LogTag, "root_start trigger=${trigger.wire} stage=ready phase=${snapshot.phase}") }
             return snapshot
         } catch (error: Exception) {
             withContext(NonCancellable) { RootFailureWatcher.stop() }
             val outcome = if (error is kotlinx.coroutines.CancellationException) "cancelled" else "failed"
-            runCatching { AndroidAppLogger.warn(LogTag, "root_start stage=$stage result=$outcome type=${error.javaClass.simpleName}") }
+            runCatching { AndroidAppLogger.warn(LogTag, "root_start trigger=${trigger.wire} stage=$stage result=$outcome type=${error.javaClass.simpleName}") }
             throw error
         }
     }
 
-    suspend fun stopOwn(): AsteriskdControlResponse {
+    suspend fun stopOwn(trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume): AsteriskdControlResponse {
+        runCatching { AndroidAppLogger.info(LogTag, "root_stop trigger=${trigger.wire}") }
         val initial = status()
         val initialSnapshot = initial.boundSnapshot() ?: run {
             RootFailureWatcher.stop()
@@ -257,7 +298,8 @@ internal class RootSupervisorController(
         error(response.result.message ?: "Failed to stop asteriskd")
     }
 
-    suspend fun shutdownOwn(): AsteriskdControlResponse {
+    suspend fun shutdownOwn(trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume): AsteriskdControlResponse {
+        runCatching { AndroidAppLogger.info(LogTag, "root_shutdown trigger=${trigger.wire}") }
         val initial = status()
         val initialSnapshot = initial.boundSnapshot() ?: run {
             RootFailureWatcher.stop()

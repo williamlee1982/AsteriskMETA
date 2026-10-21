@@ -4,6 +4,7 @@
 package engine.root.runtime
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class RootConfigChangePlanTest {
@@ -58,5 +59,61 @@ class RootConfigChangePlanTest {
             planRootConfigChange(null, daemon, base.toByteArray(), daemon),
         )
         assertEquals(RootConfigChangePlan.Restart, plan("proxies: [unterminated\n"))
+    }
+
+    @Test
+    fun decisionNamesTheKeyThatForcedRestartWithoutValues() {
+        val identical = explainRootConfigChange(base.toByteArray(), daemon, base.toByteArray(), daemon)
+        assertEquals(RootConfigChangePlan.NoOp, identical.plan)
+        assertEquals("identical", identical.reason)
+
+        val reloaded = explainRootConfigChange(
+            base.toByteArray(),
+            daemon,
+            base.replace("a.example", "b.example").toByteArray(),
+            daemon,
+        )
+        assertEquals(RootConfigChangePlan.HotReload, reloaded.plan)
+        assertEquals("profile_reloadable", reloaded.reason)
+
+        val port = explainRootConfigChange(
+            base.toByteArray(),
+            daemon,
+            base.replace("tproxy-port: 7895", "tproxy-port: 7896").toByteArray(),
+            daemon,
+        )
+        assertEquals(RootConfigChangePlan.Restart, port.plan)
+        assertEquals("profile_key:tproxy-port", port.reason)
+        assertFalse(port.reason.contains("7896"))
+        assertFalse(port.reason.contains("not-a-real-secret"))
+
+        val dns = explainRootConfigChange(
+            base.toByteArray(),
+            daemon,
+            base.replace("listen: 127.0.0.1:1053", "listen: 127.0.0.1:1054").toByteArray(),
+            daemon,
+        )
+        assertEquals("profile_key:dns.listen", dns.reason)
+
+        val missing = explainRootConfigChange(null, daemon, base.toByteArray(), daemon)
+        assertEquals("missing_current", missing.reason)
+
+        val opaqueDaemon = explainRootConfigChange(base.toByteArray(), daemon, base.toByteArray(), "mode: tun\n".toByteArray())
+        assertEquals(RootConfigChangePlan.Restart, opaqueDaemon.plan)
+        assertEquals("daemon_config", opaqueDaemon.reason)
+        assertFalse(opaqueDaemon.reason.contains("7895"))
+
+        val currentDaemon = """{"mode":"tproxy","coreExecutablePath":"/old/libmihomo.so"}"""
+        val nextDaemon = """{"mode":"tproxy","coreExecutablePath":"/new/libmihomo.so"}"""
+        val executable = explainRootConfigChange(
+            base.toByteArray(),
+            currentDaemon.toByteArray(),
+            base.toByteArray(),
+            nextDaemon.toByteArray(),
+        )
+        assertEquals(RootConfigChangePlan.Restart, executable.plan)
+        assertEquals("daemon_config:coreExecutablePath", executable.reason)
+        assertFalse(executable.reason.contains("/old/libmihomo.so"))
+        assertFalse(executable.reason.contains("/new/libmihomo.so"))
     }
 }

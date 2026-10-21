@@ -7,7 +7,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import app.AsteriskApplication
+import app.modes.isRootRunMode
 import app.withMihomoRestartApplied
+import engine.root.runtime.RootLifecycleTrigger
 import data.AndroidAppStateStore
 import engine.proxy.ProxyServiceResult
 import engine.proxy.ProxyServiceUseCase
@@ -87,9 +89,16 @@ private class BroadcastControlHandler(
         val result = when (command) {
             BroadcastControlCommand.Start -> {
                 if (running) {
+                    if (state.runMode.isRootRunMode()) {
+                        runCatching { proxyEngine.reconcileInstalledRootBinaries(state) }
+                            .onFailure { error ->
+                                if (error is CancellationException) throw error
+                                AndroidAppLogger.warn(LogTag, "ROOT binary reconcile during PROXY_START failed", error)
+                            }
+                    }
                     ProxyServiceResult.Success(proxyRunning = true)
                 } else {
-                    proxyServiceUseCase.toggle(state.copy(proxyRunning = false))
+                    proxyServiceUseCase.toggle(state.copy(proxyRunning = false), RootLifecycleTrigger.Broadcast)
                 }
             }
 
@@ -97,11 +106,11 @@ private class BroadcastControlHandler(
                 if (!running) {
                     ProxyServiceResult.Success(proxyRunning = false)
                 } else {
-                    proxyServiceUseCase.stop(state.runMode)
+                    proxyServiceUseCase.stop(state.runMode, RootLifecycleTrigger.Broadcast)
                 }
             }
 
-            BroadcastControlCommand.Toggle -> proxyServiceUseCase.toggle(state)
+            BroadcastControlCommand.Toggle -> proxyServiceUseCase.toggle(state, RootLifecycleTrigger.Broadcast)
             else -> return
         }
 

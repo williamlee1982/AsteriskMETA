@@ -6,6 +6,7 @@ package features.settings.usecase
 import app.AppState
 import app.ServiceControlSettings
 import engine.proxy.AndroidProxyEngine
+import engine.root.runtime.RootLifecycleTrigger
 import features.settings.servicecontrol.normalizeServiceControlSettings
 
 internal class ApplyServiceControlUseCase(
@@ -15,7 +16,7 @@ internal class ApplyServiceControlUseCase(
         val nextState = currentState.copy(
             serviceControl = normalizeServiceControlSettings(draft),
         )
-        return proxyEngine.reconfigureServiceControl(nextState)
+        return proxyEngine.reconfigureServiceControl(nextState, RootLifecycleTrigger.UiButton)
     }
 }
 

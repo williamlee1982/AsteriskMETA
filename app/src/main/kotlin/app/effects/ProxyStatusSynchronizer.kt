@@ -37,6 +37,9 @@ internal fun ProxyStatusSynchronizer(
 ) {
     val lifecycleOwner = LocalLifecycleOwner.current
     var foregroundSyncGeneration by remember(stateStore, proxyEngine) { mutableIntStateOf(0) }
+    val reconcileRootBinaries: suspend (AppState) -> Unit = { snapshot ->
+        proxyEngine.reconcileInstalledRootBinaries(snapshot)
+    }
 
     DisposableEffect(lifecycleOwner, stateStore, proxyEngine) {
         val observer = LifecycleEventObserver { _, event ->
@@ -55,6 +58,7 @@ internal fun ProxyStatusSynchronizer(
                 runCatching { proxyEngine.status(snapshot.runMode, snapshot) }.getOrNull()
             },
             updateAppState = updateAppState,
+            reconcileRootBinaries = reconcileRootBinaries,
         )
     }
 
@@ -69,6 +73,22 @@ internal fun ProxyStatusSynchronizer(
                 .distinctUntilChanged()
                 .collectLatest { target ->
                     if (target == null) return@collectLatest
+                    if (target.expectedRunning) {
+                        val state = stateStore.state.value
+                        if (state.runMode == target.runMode && state.proxyRunning) {
+                            try {
+                                proxyEngine.reconcileInstalledRootBinaries(state)
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Throwable) {
+                                AndroidAppLogger.warn(
+                                    ProxyStatusWatchLogTag,
+                                    "ROOT binary reconcile failed",
+                                    error,
+                                )
+                            }
+                        }
+                    }
                     try {
                         proxyEngine.observeRootStatus(target.runMode).collect { status ->
                             updateAppState { state ->
@@ -96,6 +116,7 @@ internal fun ProxyStatusSynchronizer(
                             runCatching { proxyEngine.status(snapshot.runMode, snapshot) }.getOrNull()
                         },
                         updateAppState = updateAppState,
+                        reconcileRootBinaries = reconcileRootBinaries,
                     )
                 }
         }
@@ -106,6 +127,7 @@ internal suspend fun observeProxyStatus(
     states: Flow<AppState>,
     readStatus: suspend (AppState) -> ProxyEngineStatus?,
     updateAppState: (((AppState) -> AppState) -> Unit),
+    reconcileRootBinaries: suspend (AppState) -> Unit = {},
 ) {
     states
         .distinctUntilChangedBy { state ->
@@ -117,6 +139,7 @@ internal suspend fun observeProxyStatus(
                 currentState = { snapshot },
                 readStatus = readStatus,
                 updateAppState = updateAppState,
+                reconcileRootBinaries = reconcileRootBinaries,
             )
         }
 }
@@ -125,8 +148,18 @@ internal suspend fun synchronizeProxyStatus(
     currentState: () -> AppState,
     readStatus: suspend (AppState) -> ProxyEngineStatus?,
     updateAppState: (((AppState) -> AppState) -> Unit),
+    reconcileRootBinaries: suspend (AppState) -> Unit = {},
 ): Boolean {
     val snapshot = currentState()
+    if (snapshot.runMode.isRootRunMode() && snapshot.proxyRunning) {
+        try {
+            reconcileRootBinaries(snapshot)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            AndroidAppLogger.warn(ProxyStatusWatchLogTag, "ROOT binary reconcile failed", error)
+        }
+    }
     val shouldCheckRuntime = snapshot.runMode.isRootRunMode() ||
         snapshot.proxyRunning ||
         snapshot.pendingMihomoRestartProfileId != 0
