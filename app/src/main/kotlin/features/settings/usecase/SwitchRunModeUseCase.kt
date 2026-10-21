@@ -14,6 +14,7 @@ import app.modes.isRootRunMode
 import engine.hevtun.deleteHevSocks5TunnelLogFile
 import engine.proxy.AndroidProxyEngine
 import engine.root.runtime.RootFailureWatcher
+import engine.root.runtime.RootLifecycleTrigger
 import features.logs.AndroidAppLogger
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -65,9 +66,9 @@ internal class SwitchRunModeUseCase(
         val stoppedRunning = if (currentState.proxyRunning || currentRootRequiresShutdown) {
             runCatching {
                 if (currentState.runMode.isRootRunMode()) {
-                    proxyEngine.shutdownCurrentRunMode(currentState.runMode)
+                    proxyEngine.shutdownCurrentRunMode(currentState.runMode, RootLifecycleTrigger.UiButton)
                 } else {
-                    proxyEngine.stopCurrentRunMode(currentState.runMode)
+                    proxyEngine.stopCurrentRunMode(currentState.runMode, RootLifecycleTrigger.UiButton)
                 }
             }
                 .getOrElse { error ->

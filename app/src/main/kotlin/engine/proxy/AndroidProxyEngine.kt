@@ -7,6 +7,11 @@ import android.content.Context
 import app.modes.RunModeVpnService
 import engine.proxy.mode.AndroidModeProxyEngine
 import engine.root.RootModeEngine
+import engine.root.logRootBinaryMismatch
+import engine.root.runtime.RootLifecycleTrigger
+import engine.root.runtime.RootRunningBinaryAction
+import engine.root.runtime.rootRunningBinaryAction
+import engine.root.runtime.shouldConsiderRootBinaryReplacement
 import engine.root.keepalive.RootKeepAliveService
 import engine.root.runtime.model.RootRuntimeMode
 import engine.root.runtime.model.RootRuntimeOwner
@@ -51,6 +56,10 @@ internal class AndroidProxyEngine(
     private val rootEnginesByRunMode = rootEngines.associateBy(RootModeEngine::runMode)
     private val operationMutex = Mutex()
     private val mutableRootStatusWatchGeneration = MutableStateFlow(0L)
+    /** Set by an explicit stop so a binary-mismatch reconcile cannot start the core again. */
+    private var explicitRootStop = false
+    /** One upgrade replacement per process. A match also settles so cold starts do not probe forever. */
+    private var rootBinaryIdentitySettled = false
     private var activeEngine: AndroidModeProxyEngine? = null
     internal val rootStatusWatchGeneration: StateFlow<Long> =
         mutableRootStatusWatchGeneration.asStateFlow()
@@ -58,22 +67,60 @@ internal class AndroidProxyEngine(
     suspend fun start(
         request: ProxyEngineStartRequest,
         requestVpnPermission: VpnPermissionRequester = DenyVpnPermission,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume,
     ): ProxyEngineStatus = operationMutex.withLock {
+        explicitRootStop = false
         withVpnPermissionRequester(requestVpnPermission) {
-            startUnlocked(request)
+            startUnlocked(request, trigger = trigger)
         }
     }
 
-    suspend fun stop(preferredRunMode: Int? = null): ProxyEngineStatus = operationMutex.withLock {
-        stopUnlocked(preferredRunMode)
+    suspend fun stop(
+        preferredRunMode: Int? = null,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume,
+    ): ProxyEngineStatus = operationMutex.withLock {
+        explicitRootStop = true
+        stopUnlocked(preferredRunMode, trigger)
     }
 
-    suspend fun stopCurrentRunMode(runMode: Int): ProxyEngineStatus = operationMutex.withLock {
-        stopRunModeUnlocked(runMode)
+    suspend fun stopCurrentRunMode(
+        runMode: Int,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume,
+    ): ProxyEngineStatus = operationMutex.withLock {
+        explicitRootStop = true
+        stopRunModeUnlocked(runMode, trigger)
     }
 
-    suspend fun shutdownCurrentRunMode(runMode: Int): ProxyEngineStatus = operationMutex.withLock {
-        shutdownRunModeUnlocked(runMode)
+    suspend fun shutdownCurrentRunMode(
+        runMode: Int,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume,
+    ): ProxyEngineStatus = operationMutex.withLock {
+        explicitRootStop = true
+        shutdownRunModeUnlocked(runMode, trigger)
+    }
+
+    /**
+     * When a ROOT core is already what the user wants running, compare its binaries with the
+     * installed APK once. A mismatch performs one supervised restart. VPN mode never calls this.
+     * An explicit stop is left stopped.
+     */
+    internal suspend fun reconcileInstalledRootBinaries(state: app.AppState) {
+        if (!shouldConsiderRootBinaryReplacement(state.runMode)) return
+        operationMutex.withLock {
+            if (explicitRootStop || rootBinaryIdentitySettled) return@withLock
+            withContext(Dispatchers.Default) {
+                val engine = rootEnginesByRunMode[state.runMode] ?: return@withContext
+                if (noteUnsettledRootBinaryAction(engine, RootLifecycleTrigger.InternalResume) != RootRunningBinaryAction.ReplaceOnce) {
+                    return@withContext
+                }
+                startUnlocked(
+                    ProxyEngineStartRequest(state.copy(runMode = engine.runMode)),
+                    explicitRestart = true,
+                    trigger = RootLifecycleTrigger.UpgradeMismatch,
+                    forceSupervisedRestart = true,
+                )
+            }
+        }
     }
 
     suspend fun <T> changeRootCore(
@@ -89,13 +136,19 @@ internal class AndroidProxyEngine(
         action()
     }
 
+    /**
+     * Profile, subscription, and tailnet restarts land here and then in [RootModeEngine.restart],
+     * which plans NoOp / HotReload / supervised Restart. Unchanged config is not a stop+start.
+     */
     suspend fun restart(
         request: ProxyEngineStartRequest,
         requestVpnPermission: VpnPermissionRequester = DenyVpnPermission,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume,
     ): ProxyEngineStatus {
         val status = operationMutex.withLock {
+            explicitRootStop = false
             withVpnPermissionRequester(requestVpnPermission) {
-                startUnlocked(request, explicitRestart = true)
+                startUnlocked(request, explicitRestart = true, trigger = trigger)
             }
         }
         mutableRootStatusWatchGeneration.update { generation -> generation + 1L }
@@ -114,13 +167,16 @@ internal class AndroidProxyEngine(
         }
     }
 
-    suspend fun reconfigureServiceControl(nextState: app.AppState): app.AppState {
+    suspend fun reconfigureServiceControl(
+        nextState: app.AppState,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume,
+    ): app.AppState {
         val appliedState = operationMutex.withLock {
             val rootEngine = rootEnginesByRunMode[nextState.runMode] ?: return@withLock nextState
             val resolvedState = nextState.withResolvedDynamicLocalProxyPort()
             val wasRunning = withContext(Dispatchers.Default) {
                 AndroidMihomoRuntime.releaseStandby()
-                rootEngine.reconfigureServiceControl(ProxyEngineStartRequest(resolvedState))
+                rootEngine.reconfigureServiceControl(ProxyEngineStartRequest(resolvedState), trigger)
             }
             activeEngine = rootEngine.takeIf { wasRunning }
             resolvedState.copy(proxyRunning = wasRunning)
@@ -146,6 +202,8 @@ internal class AndroidProxyEngine(
     private suspend fun startUnlocked(
         request: ProxyEngineStartRequest,
         explicitRestart: Boolean = false,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume,
+        forceSupervisedRestart: Boolean = false,
     ): ProxyEngineStatus = withContext(Dispatchers.Default) {
         val raw = appContext.requireStartableRawConfig(request.appState)
         val validatedRequest = request.copy(
@@ -155,6 +213,7 @@ internal class AndroidProxyEngine(
         val requestedEngine = validatedRequest.appState.runMode.engine()
         val hasOtherActiveEngine = activeEngine.let { active -> active != null && active !== requestedEngine }
         var rootResumeChecked = false
+        var forceSupervised = forceSupervisedRestart
         // A start that reaches an already running engine does not relaunch the core, so the
         // ports it is running with must be kept instead of being resolved again.
         if (!explicitRestart && requestedEngine is VpnMihomoEngine && activeEngine === requestedEngine) {
@@ -170,18 +229,32 @@ internal class AndroidProxyEngine(
                 return@withContext status.copy(appState = request.appState)
             }
         }
-        if (shouldResumeRootBeforeResolvingPorts(explicitRestart, hasOtherActiveEngine, requestedEngine is RootModeEngine)) {
-            requestedEngine as RootModeEngine
-            requestedEngine.resumeIfRunning(validatedRequest)?.let { status ->
-                activeEngine = requestedEngine
-                val resumed = status.copy(appState = request.appState)
-                val resumedStats = validatedRequest.appState.toMihomoTrafficStatsRuntime(
-                    runMode = status.runMode ?: validatedRequest.appState.runMode,
-                    rawConfig = validatedRequest.rawConfig,
-                )
-                MihomoTrafficStatsNotificationService.reconcile(appContext, resumedStats)
-                reconcileRootKeepAlive(status.runMode ?: validatedRequest.appState.runMode, status.running, resumedStats != null)
-                return@withContext resumed
+        val rootEngine = requestedEngine as? RootModeEngine
+        val canResumeRoot = shouldResumeRootBeforeResolvingPorts(
+            explicitRestart,
+            hasOtherActiveEngine,
+            rootEngine != null,
+        )
+        if (rootEngine != null && shouldConsiderRootBinaryReplacement(validatedRequest.appState.runMode)) {
+            when (noteUnsettledRootBinaryAction(rootEngine, trigger)) {
+                RootRunningBinaryAction.ReplaceOnce -> forceSupervised = true
+                RootRunningBinaryAction.Reattach -> if (canResumeRoot) {
+                    rootEngine.resumeIfRunning(validatedRequest, trigger)?.let { status ->
+                        return@withContext adoptResumedRoot(rootEngine, status, request, validatedRequest)
+                    }
+                    rootResumeChecked = true
+                }
+                RootRunningBinaryAction.Ignore -> if (canResumeRoot) rootResumeChecked = true
+                null -> if (canResumeRoot) {
+                    rootEngine.resumeIfRunning(validatedRequest, trigger)?.let { status ->
+                        return@withContext adoptResumedRoot(rootEngine, status, request, validatedRequest)
+                    }
+                    rootResumeChecked = true
+                }
+            }
+        } else if (canResumeRoot && rootEngine != null) {
+            rootEngine.resumeIfRunning(validatedRequest, trigger)?.let { status ->
+                return@withContext adoptResumedRoot(rootEngine, status, request, validatedRequest)
             }
             rootResumeChecked = true
         }
@@ -211,7 +284,7 @@ internal class AndroidProxyEngine(
         val rootToRootRestart = explicitRestart &&
             currentEngine is RootModeEngine && nextEngine is RootModeEngine
         if (currentEngine != null && currentEngine !== nextEngine && !rootToRootRestart) {
-            if (currentEngine is RootModeEngine) currentEngine.shutdown() else currentEngine.stop()
+            if (currentEngine is RootModeEngine) currentEngine.shutdown(trigger) else currentEngine.stop()
         }
         if (nextEngine is RootModeEngine) {
             AndroidMihomoRuntime.releaseStandby()
@@ -219,13 +292,16 @@ internal class AndroidProxyEngine(
         activeEngine = nextEngine
         try {
             val status = when {
-                explicitRestart && nextEngine is RootModeEngine -> nextEngine.restart(resolvedRequest)
+                forceSupervised && nextEngine is RootModeEngine ->
+                    nextEngine.restartSupervised(resolvedRequest, RootLifecycleTrigger.UpgradeMismatch)
+                explicitRestart && nextEngine is RootModeEngine -> nextEngine.restart(resolvedRequest, trigger)
                 explicitRestart && nextEngine is VpnMihomoEngine -> nextEngine.restart(resolvedRequest)
                 shouldUsePreResolvedRootStart(
                     explicitRestart = explicitRestart,
                     resumeChecked = rootResumeChecked,
                     nextEngineIsRoot = nextEngine is RootModeEngine,
-                ) -> (nextEngine as RootModeEngine).startAfterResumeCheck(resolvedRequest)
+                ) -> (nextEngine as RootModeEngine).startAfterResumeCheck(resolvedRequest, trigger)
+                nextEngine is RootModeEngine -> nextEngine.start(resolvedRequest, trigger)
                 else -> nextEngine.start(resolvedRequest)
             }
                 .copy(
@@ -253,35 +329,47 @@ internal class AndroidProxyEngine(
         }
     }
 
-    private suspend fun stopUnlocked(preferredRunMode: Int? = null): ProxyEngineStatus = withContext(Dispatchers.Default) {
+    private suspend fun stopUnlocked(
+        preferredRunMode: Int? = null,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume,
+    ): ProxyEngineStatus = withContext(Dispatchers.Default) {
         val engine = findEngineToStop(preferredRunMode)
         val stoppedMode = engine?.runMode
-        engine?.stop()
+        when (engine) {
+            is RootModeEngine -> engine.stop(trigger)
+            else -> engine?.stop()
+        }
         activeEngine = null
         MihomoTrafficStatsNotificationService.reconcile(appContext, null)
         RootKeepAliveService.reconcile(appContext, active = false)
         ProxyEngineStatus(running = false, runMode = stoppedMode)
     }
 
-    private suspend fun stopRunModeUnlocked(runMode: Int): ProxyEngineStatus = withContext(Dispatchers.Default) {
+    private suspend fun stopRunModeUnlocked(
+        runMode: Int,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume,
+    ): ProxyEngineStatus = withContext(Dispatchers.Default) {
         val engine = runMode.engine()
         activeEngine
             ?.takeIf { active -> active !== engine }
-            ?.stop()
-        val status = engine.stop()
+            ?.let { active -> if (active is RootModeEngine) active.stop(trigger) else active.stop() }
+        val status = if (engine is RootModeEngine) engine.stop(trigger) else engine.stop()
         activeEngine = null
         MihomoTrafficStatsNotificationService.reconcile(appContext, null)
         RootKeepAliveService.reconcile(appContext, active = false)
         status
     }
 
-    private suspend fun shutdownRunModeUnlocked(runMode: Int): ProxyEngineStatus =
+    private suspend fun shutdownRunModeUnlocked(
+        runMode: Int,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume,
+    ): ProxyEngineStatus =
         withContext(Dispatchers.Default) {
             val engine = runMode.engine()
             activeEngine
                 ?.takeIf { active -> active !== engine }
-                ?.let { active -> if (active is RootModeEngine) active.shutdown() else active.stop() }
-            val status = if (engine is RootModeEngine) engine.shutdown() else engine.stop()
+                ?.let { active -> if (active is RootModeEngine) active.shutdown(trigger) else active.stop() }
+            val status = if (engine is RootModeEngine) engine.shutdown(trigger) else engine.stop()
             activeEngine = null
             MihomoTrafficStatsNotificationService.reconcile(appContext, null)
             RootKeepAliveService.reconcile(appContext, active = false)
@@ -388,6 +476,48 @@ internal class AndroidProxyEngine(
         // The ROOT keep-alive is not released by status reads: during an automatic supervisor
         // restart the core is briefly not running and the process must stay protected.
         return this
+    }
+
+    private fun adoptResumedRoot(
+        engine: RootModeEngine,
+        status: ProxyEngineStatus,
+        request: ProxyEngineStartRequest,
+        validatedRequest: ProxyEngineStartRequest,
+    ): ProxyEngineStatus {
+        activeEngine = engine
+        val resumed = status.copy(appState = request.appState)
+        val resumedStats = validatedRequest.appState.toMihomoTrafficStatsRuntime(
+            runMode = status.runMode ?: validatedRequest.appState.runMode,
+            rawConfig = validatedRequest.rawConfig,
+        )
+        MihomoTrafficStatsNotificationService.reconcile(appContext, resumedStats)
+        reconcileRootKeepAlive(
+            status.runMode ?: validatedRequest.appState.runMode,
+            status.running,
+            resumedStats != null,
+        )
+        return resumed
+    }
+
+    /**
+     * Returns null when this process already decided, the user explicitly stopped, or the running
+     * mode is not the requested one. VPN never reaches here.
+     */
+    private suspend fun noteUnsettledRootBinaryAction(
+        engine: RootModeEngine,
+        origin: RootLifecycleTrigger,
+    ): RootRunningBinaryAction? {
+        if (explicitRootStop || rootBinaryIdentitySettled) return null
+        val snapshot = engine.ownRunningSnapshotOrNull() ?: return RootRunningBinaryAction.Ignore
+        if (snapshot.mode != engine.daemonMode) return null
+        val action = rootRunningBinaryAction(
+            explicitStop = false,
+            alreadyAttempted = false,
+            classification = engine.classifyInstalledBinaries(snapshot),
+        )
+        if (action != RootRunningBinaryAction.Ignore) rootBinaryIdentitySettled = true
+        if (action == RootRunningBinaryAction.ReplaceOnce) logRootBinaryMismatch(origin)
+        return action
     }
 
     /** ROOT has no VPN service; keep a foreground service while its core runs (no ROOT IO). */

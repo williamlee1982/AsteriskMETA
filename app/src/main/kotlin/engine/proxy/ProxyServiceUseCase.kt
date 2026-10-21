@@ -6,6 +6,7 @@ package engine.proxy
 import app.AppState
 import engine.mihomo.requireUsableMihomoProfile
 import engine.root.runtime.RootFailureKind
+import engine.root.runtime.RootLifecycleTrigger
 import engine.root.runtime.RootOperationBlockedException
 import engine.root.runtime.RootOperationLogRecord
 import engine.root.runtime.RootOperationResult
@@ -24,20 +25,26 @@ internal class ProxyServiceUseCase(
     private val proxyEngine: AndroidProxyEngine,
     private val requestVpnPermission: VpnPermissionRequester = DenyVpnPermission,
 ) {
-    suspend fun toggle(state: AppState): ProxyServiceResult {
+    suspend fun toggle(
+        state: AppState,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.UiButton,
+    ): ProxyServiceResult {
         val live = try {
             proxyEngine.status(state.runMode, state)
         } catch (error: Throwable) {
             return error.toProxyServiceFailure(RootRequestedAction.Toggle)
         }
         return when (val decision = decideRootSafeToggle(LocalRootOwner, live)) {
-            RootToggleDecision.OrdinaryStart -> start(state)
-            RootToggleDecision.StopOwn -> stop(state.runMode)
+            RootToggleDecision.OrdinaryStart -> start(state, trigger)
+            RootToggleDecision.StopOwn -> stop(state.runMode, trigger)
             is RootToggleDecision.Blocked -> decision.result.toProxyServiceFailure(RootRequestedAction.Toggle)
         }
     }
 
-    suspend fun restart(state: AppState): ProxyServiceResult {
+    suspend fun restart(
+        state: AppState,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.UiButton,
+    ): ProxyServiceResult {
         val live = try {
             proxyEngine.status(state.runMode, state)
         } catch (error: Throwable) {
@@ -49,24 +56,27 @@ internal class ProxyServiceUseCase(
         )?.let { conflict -> return conflict.toProxyServiceFailure(RootRequestedAction.RestartSameOwner) }
         return runCatching {
             state.requireUsableMihomoProfile()
-            proxyEngine.restart(ProxyEngineStartRequest(state), requestVpnPermission)
+            proxyEngine.restart(ProxyEngineStartRequest(state), requestVpnPermission, trigger)
         }.fold(
             onSuccess = { status -> ProxyServiceResult.Success(proxyRunning = status.running, appState = status.appState) },
             onFailure = { error -> error.toProxyServiceFailure(RootRequestedAction.RestartSameOwner) },
         )
     }
 
-    private suspend fun start(state: AppState): ProxyServiceResult {
+    private suspend fun start(state: AppState, trigger: RootLifecycleTrigger): ProxyServiceResult {
         return runCatching {
             state.requireUsableMihomoProfile()
-            proxyEngine.start(ProxyEngineStartRequest(state), requestVpnPermission)
+            proxyEngine.start(ProxyEngineStartRequest(state), requestVpnPermission, trigger)
         }.fold(
             onSuccess = { status -> ProxyServiceResult.Success(proxyRunning = status.running, appState = status.appState) },
             onFailure = { error -> error.toProxyServiceFailure(RootRequestedAction.OrdinaryStart) },
         )
     }
 
-    suspend fun stop(runMode: Int): ProxyServiceResult {
+    suspend fun stop(
+        runMode: Int,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.UiButton,
+    ): ProxyServiceResult {
         val live = try {
             proxyEngine.status(runMode)
         } catch (error: Throwable) {
@@ -76,13 +86,16 @@ internal class ProxyServiceUseCase(
             LocalRootOwner,
             live,
         )?.let { conflict -> return conflict.toProxyServiceFailure(RootRequestedAction.StopOwn) }
-        return runCatching { proxyEngine.stop(runMode) }.fold(
+        return runCatching { proxyEngine.stop(runMode, trigger) }.fold(
             onSuccess = { status -> ProxyServiceResult.Success(proxyRunning = status.running, appState = status.appState) },
             onFailure = { error -> error.toProxyServiceFailure(RootRequestedAction.StopOwn) },
         )
     }
 
-    suspend fun shutdown(runMode: Int): ProxyServiceResult {
+    suspend fun shutdown(
+        runMode: Int,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.UiButton,
+    ): ProxyServiceResult {
         val live = try {
             proxyEngine.status(runMode)
         } catch (error: Throwable) {
@@ -91,7 +104,7 @@ internal class ProxyServiceUseCase(
         classifyForeignRootConflict(LocalRootOwner, live)?.let { conflict ->
             return conflict.toProxyServiceFailure(RootRequestedAction.StopOwn)
         }
-        return runCatching { proxyEngine.shutdownCurrentRunMode(runMode) }.fold(
+        return runCatching { proxyEngine.shutdownCurrentRunMode(runMode, trigger) }.fold(
             onSuccess = { status -> ProxyServiceResult.Success(status.running, status.appState) },
             onFailure = { error -> error.toProxyServiceFailure(RootRequestedAction.StopOwn) },
         )

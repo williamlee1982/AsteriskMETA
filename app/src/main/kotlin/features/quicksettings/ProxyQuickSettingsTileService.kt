@@ -19,12 +19,15 @@ import app.MainActivity
 import app.R
 import app.withMihomoRestartApplied
 import app.modes.RunModeVpnService
+import app.modes.isRootRunMode
+import engine.root.runtime.RootLifecycleTrigger
 import data.AndroidAppStateStore
 import data.AppSettingsPreferences
 import engine.proxy.ProxyServiceResult
 import engine.proxy.ProxyServiceUseCase
 import features.logs.AndroidAppLogger
 import features.settings.locale.localizedAppContext
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,7 +37,6 @@ import kotlinx.coroutines.launch
 import ui.feedback.rootOperationTipMessageOrNull
 import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
 
 class ProxyQuickSettingsTileService : TileService() {
@@ -116,7 +118,16 @@ class ProxyQuickSettingsTileService : TileService() {
             updateTile(processing = true)
             return
         }
-        val running = syncProxyRunningState()
+        var running = syncProxyRunningState()
+        val state = stateStore.state.value
+        if (running && state.runMode.isRootRunMode()) {
+            runCatching { proxyEngine.reconcileInstalledRootBinaries(state) }
+                .onFailure { error ->
+                    if (error is CancellationException) throw error
+                    AndroidAppLogger.warn(LogTag, "ROOT binary reconcile from the quick settings tile failed", error)
+                }
+            running = syncProxyRunningState()
+        }
         updateTile(running = running)
     }
 
@@ -130,7 +141,7 @@ class ProxyQuickSettingsTileService : TileService() {
             return false
         }
 
-        when (val result = proxyServiceUseCase.toggle(state)) {
+        when (val result = proxyServiceUseCase.toggle(state, RootLifecycleTrigger.Tile)) {
             is ProxyServiceResult.Success -> {
                 stateStore.update { currentState ->
                     currentState.copy(

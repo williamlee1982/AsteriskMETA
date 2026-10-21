@@ -25,7 +25,9 @@ import engine.root.publication.RootPublishedControllerReader
 import engine.root.publication.prepareRootPublicationDirectories
 import engine.root.publication.publishRootProviderUpdates
 import engine.root.runtime.RootConfigChangePlan
-import engine.root.runtime.planRootConfigChange
+import engine.root.runtime.RootLifecycleTrigger
+import engine.root.runtime.explainRootConfigChange
+import engine.root.runtime.sanitizeRootLogToken
 import features.logs.AndroidAppLogger
 import java.io.File
 import engine.root.runtime.RootFailureWatcher
@@ -55,17 +57,44 @@ internal class RootModeEngine(
         get() = definition.runMode
 
     override suspend fun start(request: ProxyEngineStartRequest): ProxyEngineStatus {
-        return start(request, explicitRestart = false, resumeAlreadyChecked = false)
+        return start(request, RootLifecycleTrigger.InternalResume)
     }
 
-    suspend fun startAfterResumeCheck(request: ProxyEngineStartRequest): ProxyEngineStatus {
-        return start(request, explicitRestart = false, resumeAlreadyChecked = true)
+    suspend fun start(request: ProxyEngineStartRequest, trigger: RootLifecycleTrigger): ProxyEngineStatus {
+        return start(request, explicitRestart = false, resumeAlreadyChecked = false, trigger = trigger)
     }
 
-    suspend fun restart(request: ProxyEngineStartRequest): ProxyEngineStatus {
-        applyWithoutRestart(request)?.let { return it }
-        return start(request, explicitRestart = true, resumeAlreadyChecked = false)
+    suspend fun startAfterResumeCheck(
+        request: ProxyEngineStartRequest,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume,
+    ): ProxyEngineStatus {
+        return start(request, explicitRestart = false, resumeAlreadyChecked = true, trigger = trigger)
     }
+
+    /**
+     * User-facing restart (profile, subscription, tailnet) enters here and plans NoOp / HotReload /
+     * supervised Restart. Identical configuration does not stop the core.
+     */
+    suspend fun restart(
+        request: ProxyEngineStartRequest,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume,
+    ): ProxyEngineStatus {
+        applyWithoutRestart(request, trigger)?.let { return it }
+        return start(request, explicitRestart = true, resumeAlreadyChecked = false, trigger = trigger)
+    }
+
+    /** Binary mismatch: skip the config planner, which would NoOp and keep the old process. */
+    suspend fun restartSupervised(
+        request: ProxyEngineStartRequest,
+        trigger: RootLifecycleTrigger,
+    ): ProxyEngineStatus {
+        return start(request, explicitRestart = true, resumeAlreadyChecked = true, trigger = trigger)
+    }
+
+    suspend fun ownRunningSnapshotOrNull() = controller.ownRunningSnapshotOrNull()
+
+    suspend fun classifyInstalledBinaries(snapshot: engine.root.daemon.control.AsteriskdSnapshot) =
+        controller.classifyInstalledBinaries(snapshot)
 
     /**
      * A requested restart of a running AsteriskMETA core first compares what would be published
@@ -74,7 +103,10 @@ internal class RootModeEngine(
      * open connections survive. Returns `null` when a supervised restart is required or the hot
      * path failed (the caller then restarts as before).
      */
-    private suspend fun applyWithoutRestart(request: ProxyEngineStartRequest): ProxyEngineStatus? {
+    private suspend fun applyWithoutRestart(
+        request: ProxyEngineStartRequest,
+        trigger: RootLifecycleTrigger,
+    ): ProxyEngineStatus? {
         if (!rootAccess.hasRootAccess()) return null
         val running = runCatching {
             controller.preflightStart(definition.daemonMode, explicitRestart = false)
@@ -89,9 +121,14 @@ internal class RootModeEngine(
             val nextDaemon = AsteriskdConfigEncoder.encode(config.asteriskdConfig).toByteArray(Charsets.UTF_8)
             val currentProfile = runCatching { File(layout.configPath).readBytes() }.getOrNull()
             val currentDaemon = runCatching { File(layout.asteriskdConfigPath).readBytes() }.getOrNull()
-            val plan = planRootConfigChange(currentProfile, currentDaemon, config.root.mihomoProfileBytes, nextDaemon)
-            runCatching { AndroidAppLogger.info(LogTag, "root_restart plan=${plan.name}") }
-            when (plan) {
+            val decision = explainRootConfigChange(
+                currentProfile,
+                currentDaemon,
+                config.root.mihomoProfileBytes,
+                nextDaemon,
+            )
+            logRootRestart(trigger, decision.plan, decision.reason)
+            when (decision.plan) {
                 RootConfigChangePlan.Restart -> return null
                 RootConfigChangePlan.NoOp -> Unit
                 RootConfigChangePlan.HotReload -> {
@@ -109,7 +146,7 @@ internal class RootModeEngine(
                             reloadLocally = false,
                         )
                     }
-                    runCatching { AndroidAppLogger.info(LogTag, "root_restart hot_reload=ok") }
+                    runCatching { AndroidAppLogger.info(LogTag, "root_restart trigger=${trigger.wire} plan=HotReload result=ok") }
                 }
             }
             config.localProxyOptions?.let(LocalProxyRuntime::update) ?: LocalProxyRuntime.clear()
@@ -117,18 +154,25 @@ internal class RootModeEngine(
         } catch (error: Exception) {
             if (error is CancellationException) throw error
             runCatching {
-                AndroidAppLogger.warn(LogTag, "root_restart hot_reload=failed type=${error.javaClass.simpleName}; falling back to supervised restart")
+                AndroidAppLogger.warn(
+                    LogTag,
+                    "root_restart trigger=${trigger.wire} hot_reload=failed type=${error.javaClass.simpleName}; falling back to supervised restart",
+                )
             }
             null
         }
     }
 
-    suspend fun resumeIfRunning(request: ProxyEngineStartRequest): ProxyEngineStatus? {
+    suspend fun resumeIfRunning(
+        request: ProxyEngineStartRequest,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume,
+    ): ProxyEngineStatus? {
         if (!rootAccess.hasRootAccess()) error(context.getString(definition.rootRequiredErrorResId))
         controller.preflightStart(definition.daemonMode, explicitRestart = false) ?: return null
         val restored = buildLocalProxyOptions(request)
         val confirmed = controller.preflightStart(definition.daemonMode, explicitRestart = false) ?: return null
         restored?.let(LocalProxyRuntime::update) ?: LocalProxyRuntime.clear()
+        runCatching { AndroidAppLogger.info(LogTag, "root_resume trigger=${trigger.wire} action=reattach") }
         return controller.proxyStatus(confirmed, runMode, definition.daemonMode)
     }
 
@@ -136,12 +180,13 @@ internal class RootModeEngine(
         request: ProxyEngineStartRequest,
         explicitRestart: Boolean,
         resumeAlreadyChecked: Boolean,
+        trigger: RootLifecycleTrigger,
     ): ProxyEngineStatus {
         if (!resumeAlreadyChecked && !rootAccess.hasRootAccess()) {
             error(context.getString(definition.rootRequiredErrorResId))
         }
         if (!explicitRestart) {
-            if (!resumeAlreadyChecked) resumeIfRunning(request)?.let { return it }
+            if (!resumeAlreadyChecked) resumeIfRunning(request, trigger)?.let { return it }
         } else {
             controller.preflightStart(definition.daemonMode, explicitRestart = true)
         }
@@ -152,9 +197,9 @@ internal class RootModeEngine(
         require(config.asteriskdConfig.mode == definition.daemonMode)
         return runCatching {
             val snapshot = if (explicitRestart) {
-                controller.restart(config.root, config.asteriskdConfig)
+                controller.restart(config.root, config.asteriskdConfig, trigger)
             } else {
-                controller.start(config.root, config.asteriskdConfig)
+                controller.start(config.root, config.asteriskdConfig, trigger)
             }
             controller.requireRunning(snapshot, definition.daemonMode)
             config.localProxyOptions?.let(LocalProxyRuntime::update) ?: LocalProxyRuntime.clear()
@@ -193,23 +238,28 @@ internal class RootModeEngine(
             .buildConfig(context.prepareRootConfigBuildContext(request))
             .localProxyOptions
 
-    override suspend fun stop(): ProxyEngineStatus {
-        controller.stopOwn()
+    override suspend fun stop(): ProxyEngineStatus = stop(RootLifecycleTrigger.InternalResume)
+
+    suspend fun stop(trigger: RootLifecycleTrigger): ProxyEngineStatus {
+        controller.stopOwn(trigger)
         LocalProxyRuntime.clear()
         return status()
     }
 
-    suspend fun shutdown(): ProxyEngineStatus {
-        controller.shutdownOwn()
+    suspend fun shutdown(trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume): ProxyEngineStatus {
+        controller.shutdownOwn(trigger)
         LocalProxyRuntime.clear()
         return status()
     }
 
-    suspend fun reconfigureServiceControl(request: ProxyEngineStartRequest): Boolean {
+    suspend fun reconfigureServiceControl(
+        request: ProxyEngineStartRequest,
+        trigger: RootLifecycleTrigger = RootLifecycleTrigger.InternalResume,
+    ): Boolean {
         if (!rootAccess.hasRootAccess()) error(context.getString(definition.rootRequiredErrorResId))
         val config = definition.buildConfig(context.prepareRootConfigBuildContext(request))
         require(config.asteriskdConfig.mode == definition.daemonMode)
-        val wasRunning = controller.reconfigureServiceControl(config.root, config.asteriskdConfig)
+        val wasRunning = controller.reconfigureServiceControl(config.root, config.asteriskdConfig, trigger)
         if (wasRunning) {
             config.localProxyOptions?.let(LocalProxyRuntime::update) ?: LocalProxyRuntime.clear()
         } else {
@@ -250,3 +300,27 @@ internal class RootModeEngine(
 }
 
 private const val LogTag = "RootModeEngine"
+
+private fun logRootRestart(
+    trigger: RootLifecycleTrigger,
+    plan: RootConfigChangePlan,
+    reason: String,
+    origin: RootLifecycleTrigger? = null,
+) {
+    val originPart = origin?.let { " origin=${it.wire}" }.orEmpty()
+    runCatching {
+        AndroidAppLogger.info(
+            LogTag,
+            "root_restart trigger=${trigger.wire}$originPart plan=${plan.name} reason=${sanitizeRootLogToken(reason)}",
+        )
+    }
+}
+
+internal fun logRootBinaryMismatch(origin: RootLifecycleTrigger) {
+    logRootRestart(
+        trigger = RootLifecycleTrigger.UpgradeMismatch,
+        plan = RootConfigChangePlan.Restart,
+        reason = "native_binary_mismatch",
+        origin = origin,
+    )
+}
