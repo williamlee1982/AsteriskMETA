@@ -13,6 +13,10 @@ import utils.shellQuote
  * Identity of one native binary. A running root process is stale after an APK upgrade when its
  * executable was unlinked from the previous install path, or when path, inode, mtime, or the
  * embedded mihomo module version disagrees with the file in the new install.
+ *
+ * Inode and mtime for a running process come from the mapped file. `/proc/<pid>/exe` is only a
+ * procfs symlink; statting the link itself never matches the install, including after
+ * `execv("/proc/self/exe")` (the detached asteriskd guard).
  */
 internal data class RootNativeBinaryIdentity(
     val path: String,
@@ -158,7 +162,14 @@ internal object RootNativeBinaryProbeCommand {
             appendLine("root_bin_path=$quoted")
             appendLine("printf '%s\\n' \"$label" + "_path=\$root_bin_path\"")
         }
-        appendLine("root_bin_stat=\"\$(stat -c '%i %Y' $quoted 2>/dev/null)\"")
+        // Follow /proc/<pid>/exe. lstat of that symlink is a different inode and mtime from the
+        // mapped binary, so a healthy core looks upgraded. stat() still returns the in-memory
+        // inode after unlink; readlink keeps the " (deleted)" suffix for that case.
+        if (readlink) {
+            appendLine("root_bin_stat=\"\$(stat -L -c '%i %Y' $quoted 2>/dev/null)\"")
+        } else {
+            appendLine("root_bin_stat=\"\$(stat -c '%i %Y' $quoted 2>/dev/null)\"")
+        }
         appendLine("printf '%s\\n' \"$label" + "_stat=\$root_bin_stat\"")
         appendLine(
             "root_bin_ver=\"\$(grep -a -o -m 1 -E ${RootNativeEmbeddedVersionPattern.shellQuote()} $quoted 2>/dev/null)\"",
