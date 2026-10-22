@@ -189,7 +189,7 @@ class RootNativeBinaryIdentityTest {
     @Test
     fun sameBinaryMatchesWhenProcLinkStatDiffersFromTarget() {
         assumeProcProbe()
-        val binary = executableCopy("libmihomo.so")
+        val binary = compileHoldingBinary("libmihomo.so")
         val process = startHoldingProcess(binary)
         try {
             val linkStat = statLine("-c", "%i %Y", "/proc/${process.pid()}/exe")
@@ -214,11 +214,11 @@ class RootNativeBinaryIdentityTest {
     @Test
     fun deletedExeIsMismatch() {
         assumeProcProbe()
-        val oldBinary = executableCopy("old-libmihomo.so")
+        val oldBinary = compileHoldingBinary("old-libmihomo.so")
         val process = startHoldingProcess(oldBinary)
         try {
             assertTrue(oldBinary.delete())
-            val installed = executableCopy("libmihomo.so")
+            val installed = compileHoldingBinary("libmihomo.so")
             val followed = statLine("-L", "-c", "%i %Y", "/proc/${process.pid()}/exe")
             val installedStat = statLine("-c", "%i %Y", installed.absolutePath)
             assertNotEquals(followed, installedStat)
@@ -241,8 +241,8 @@ class RootNativeBinaryIdentityTest {
     @Test
     fun differentInstallPathIsMismatch() {
         assumeProcProbe()
-        val runningBinary = executableCopy("running-libmihomo.so")
-        val installed = executableCopy("installed-libmihomo.so")
+        val runningBinary = compileHoldingBinary("running-libmihomo.so")
+        val installed = compileHoldingBinary("installed-libmihomo.so")
         val process = startHoldingProcess(runningBinary)
         try {
             val linkStat = statLine("-c", "%i %Y", "/proc/${process.pid()}/exe")
@@ -269,9 +269,9 @@ class RootNativeBinaryIdentityTest {
     @Test
     fun everyProbeRoleMatchesItsOwnMappedBinary() {
         assumeProcProbe()
-        val supervisor = executableCopy("libasteriskd.so")
-        val core = executableCopy("libmihomo.so")
-        val helper = executableCopy("libhev-socks5-tunnel-cli.so")
+        val supervisor = compileHoldingBinary("libasteriskd.so")
+        val core = compileHoldingBinary("libmihomo.so")
+        val helper = compileHoldingBinary("libhev-socks5-tunnel-cli.so")
         val supervisorProcess = startHoldingProcess(supervisor)
         val coreProcess = startHoldingProcess(core)
         val helperProcess = startHoldingProcess(helper)
@@ -305,10 +305,8 @@ class RootNativeBinaryIdentityTest {
     @Test
     fun guardStyleProcSelfExeReexecMatchesInstalledBinary() {
         assumeProcProbe()
-        val gcc = listOf("/usr/bin/gcc", "/usr/bin/cc").firstOrNull { File(it).canExecute() }
-        assumeTrue(gcc != null)
-        val source = temp.newFile("guard.c")
-        source.writeText(
+        val binary = compileBinary(
+            "libasteriskd.so",
             """
             #include <unistd.h>
             int main(int argc, char **argv) {
@@ -319,11 +317,6 @@ class RootNativeBinaryIdentityTest {
             }
             """.trimIndent(),
         )
-        val binary = File(temp.root, "libasteriskd.so")
-        val compile = ProcessBuilder(gcc, "-O2", "-o", binary.absolutePath, source.absolutePath).start()
-        val compileErrors = compile.errorStream.bufferedReader().readText()
-        assertTrue(compileErrors, compile.waitFor(30, TimeUnit.SECONDS))
-        assertEquals(compileErrors, 0, compile.exitValue())
         val process = ProcessBuilder(binary.absolutePath).start()
         try {
             awaitCmdline(process.pid(), "guard")
@@ -379,19 +372,45 @@ class RootNativeBinaryIdentityTest {
 
     private fun assumeProcProbe() {
         assumeTrue(File("/bin/sh").canExecute())
-        assumeTrue(File("/bin/sleep").canExecute())
         assumeTrue(File("/proc/self/exe").exists())
+        assumeTrue(gccPath() != null)
     }
 
-    private fun executableCopy(name: String): File {
-        val binary = temp.newFile(name)
-        binary.writeBytes(File("/bin/sleep").readBytes())
-        assertTrue(binary.setExecutable(true))
+    /**
+     * A private ELF, not a copy of /bin/sleep. Ubuntu images may point sleep at a multicall
+     * binary that dispatches on argv[0], so a copy named libmihomo.so exits immediately and
+     * /proc/<pid>/exe is already gone.
+     */
+    private fun compileHoldingBinary(name: String): File = compileBinary(
+        name,
+        """
+        #include <unistd.h>
+        int main(void) { for (;;) pause(); }
+        """.trimIndent(),
+    )
+
+    private fun compileBinary(name: String, sourceText: String): File {
+        val gcc = requireNotNull(gccPath())
+        val source = File(temp.root, "$name.c")
+        source.writeText(sourceText)
+        val binary = File(temp.root, name)
+        val compile = ProcessBuilder(gcc, "-O2", "-o", binary.absolutePath, source.absolutePath)
+            .redirectErrorStream(true)
+            .start()
+        val output = compile.inputStream.bufferedReader().readText()
+        assertTrue(output, compile.waitFor(30, TimeUnit.SECONDS))
+        assertEquals(output, 0, compile.exitValue())
         return binary
     }
 
-    private fun startHoldingProcess(binary: File): Process =
-        ProcessBuilder(binary.absolutePath, "30").start()
+    private fun gccPath(): String? =
+        listOf("/usr/bin/gcc", "/usr/bin/cc").firstOrNull { File(it).canExecute() }
+
+    private fun startHoldingProcess(binary: File): Process {
+        val process = ProcessBuilder(binary.absolutePath).start()
+        check(process.isAlive) { "holder exited immediately from ${binary.absolutePath}" }
+        return process
+    }
 
     private fun stop(process: Process) {
         process.destroy()
@@ -399,12 +418,12 @@ class RootNativeBinaryIdentityTest {
     }
 
     private fun statLine(vararg arguments: String): String {
-        val process = ProcessBuilder(listOf("stat") + arguments.asList()).start()
-        val stdout = process.inputStream.bufferedReader().readText().trim()
-        val stderr = process.errorStream.bufferedReader().readText()
-        assertTrue(stderr.ifBlank { stdout }, process.waitFor(10, TimeUnit.SECONDS))
-        assertEquals(stderr.ifBlank { stdout }, 0, process.exitValue())
-        return stdout
+        val command = listOf("stat") + arguments.asList()
+        val process = ProcessBuilder(command).redirectErrorStream(true).start()
+        val output = process.inputStream.bufferedReader().readText().trim()
+        assertTrue(output, process.waitFor(10, TimeUnit.SECONDS))
+        assertEquals(command.joinToString(" ") + "\n" + output, 0, process.exitValue())
+        return output
     }
 
     private fun readlinkExe(pid: Long): String {
