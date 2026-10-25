@@ -160,7 +160,9 @@ internal class AsteriskdClient(
         const val LogTag = "AsteriskdClient"
         const val InitialWatchRetryDelayMilliseconds = 10L
         const val MaxWatchRetryDelayMilliseconds = 250L
-        const val WatchProcessTimeoutSeconds = 16L
+        // One watch window. A start that is still progressing is re-watched, so this does not
+        // have to cover the whole core readiness timeout.
+        const val WatchProcessTimeoutSeconds = 31L
         const val DefaultUnboundTimeoutMilliseconds = 15_000L
         val DefaultWatchRetryDelaysMilliseconds = listOf(25L, 50L, 100L, 200L, 400L, 800L)
     }

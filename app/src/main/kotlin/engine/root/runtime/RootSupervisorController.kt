@@ -451,5 +451,5 @@ internal fun sanitizeLauncherStderr(stderr: String): String {
 
 /** Soft limit: the supervisor must bind its control socket within this window. */
 private const val StartTimeoutMilliseconds = 15_000L
-/** Hard cap for a progressing start (core readiness up to 60 s plus rule apply and rollback). */
+/** Hard cap for a progressing start (core readiness plus rule apply and rollback). */
 private const val StartHardTimeoutMilliseconds = 150_000L

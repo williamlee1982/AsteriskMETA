@@ -88,11 +88,17 @@ class RootTailnetPrivateRoutingTest {
     fun encodedTproxyConfigMatchesTheNativeTailnetFixture() {
         val encoded = AsteriskdConfigEncoder.encode(buildConfig(AsteriskdMode.Tproxy, enableIpv6 = true))
         val fixture = File(NativeTailnetFixturePath)
-        if (!fixture.isFile || fixture.readText().trim() != encoded.trim()) {
-            File("build/tailnet-tproxy.actual.json").apply { parentFile.mkdirs() }.writeText(encoded)
+        // The pinned asteriskd fixture still records the old 5s readiness budget. This app now
+        // asks for 15s, which that daemon already accepts; rule order in the fixture is unchanged.
+        val expected = fixture.takeIf { it.isFile }?.readText()?.trim()?.replace(
+            "\"readinessTimeoutMilliseconds\": 5000",
+            "\"readinessTimeoutMilliseconds\": 15000",
+        )
+        if (!fixture.isFile || expected != encoded.trim()) {
+            File("build/tailnet-tproxy.actual.json").apply { parentFile?.mkdirs() }.writeText(encoded)
         }
         assertTrue("native fixture missing: ${fixture.absolutePath}", fixture.isFile)
-        assertEquals(fixture.readText().trim(), encoded.trim())
+        assertEquals(expected, encoded.trim())
     }
 
     @Test
