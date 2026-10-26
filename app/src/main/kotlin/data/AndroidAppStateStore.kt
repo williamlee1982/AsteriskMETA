@@ -201,6 +201,7 @@ private fun AppState.isCheapNoopUpdate(previous: AppState): Boolean {
         externalInterfaces === previous.externalInterfaces &&
         ignoredInterfaces === previous.ignoredInterfaces &&
         privateAddressCidrs === previous.privateAddressCidrs &&
+        tailnetManagedPrivateAddressCidrs === previous.tailnetManagedPrivateAddressCidrs &&
         proxyAppListSelectedApps === previous.proxyAppListSelectedApps &&
         this == previous
 }

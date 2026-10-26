@@ -27,7 +27,9 @@ import app.effects.MihomoRuntimeLifecycleCoordinator
 import engine.mihomo.MihomoProfileContentStore
 import engine.mihomo.runtime.MihomoRuntimeRepository
 import data.AndroidAppStateStore
+import app.effects.runTailnetPrivateAddressSync
 import engine.proxy.AndroidProxyEngine
+import engine.proxy.ProxyServiceUseCase
 import system.AndroidRootShellGateway
 import features.mihomo.provider.MihomoProviderUsageStateHolder
 import features.mihomo.provider.loadSelectedMihomoProviderUsageState
@@ -124,6 +126,13 @@ class AsteriskApplication : Application(), SingletonImageLoader.Factory {
         )
         foregroundTracker = AppActivityForegroundTracker(mihomoRuntimeLifecycle)
         registerActivityLifecycleCallbacks(foregroundTracker)
+        appScope.launch {
+            runTailnetPrivateAddressSync(
+                stateStore = stateStore,
+                runtimeRepository = mihomoRuntime,
+                proxyService = ProxyServiceUseCase(proxyEngine),
+            )
+        }
         appScope.launch {
             stateStore.state
                 .map { state ->

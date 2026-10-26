@@ -1066,6 +1066,9 @@
     <string name="tailnet_state_dir_shared_storage">state-dir 位于其他应用可读的共享存储</string>
     <string name="tailnet_root_no_host_override">ROOT 透明代理模式默认绕过 %1$s。请在“私有地址设置”中按 /32 添加 Tailnet 主机，使其经由核心转发。</string>
     <string name="tailnet_root_host_overrides">私有地址中的 Tailnet 主机覆盖：%1$d 个</string>
+    <string name="tailnet_private_address_sync_toggle">路由 Tailnet 对端</string>
+    <string name="tailnet_private_address_sync_summary">把 Tailnet 里其它设备的地址加入私有地址设置，设备离开 Tailnet 后移除。你手动添加的地址会保留。TPROXY、TUN2SOCKS 和 BPF2SOCKS 会在列表变化时重启代理，使这些地址进入核心。VPN 和 ROOT TUN 不使用这份列表。</string>
+    <string name="tailnet_private_address_sync_core_missing">当前核心没有报告其它设备的地址，因此不会自动更新私有地址。</string>
     <string name="tailnet_status_checking">正在查询…</string>
     <string name="tailnet_status_idle">未启动；首次使用时启动</string>
     <string name="tailnet_status_not_in_running_config">不在正在运行的配置中；重启代理以应用配置变更</string>

@@ -100,6 +100,10 @@ internal class AppSettingsPreferences(
                 KeyTailnetInboundForwardsEnabled,
                 defaults.tailnetInboundForwardsEnabled,
             ),
+            tailnetPrivateAddressSyncEnabled = preferences.getBoolean(
+                KeyTailnetPrivateAddressSyncEnabled,
+                defaults.tailnetPrivateAddressSyncEnabled,
+            ),
             localProxyPort = preferences.getString(KeyLocalProxyPort, defaults.localProxyPort) ?: defaults.localProxyPort,
             enableDynamicLocalProxyPort = preferences.getBoolean(
                 KeyEnableDynamicLocalProxyPort,
@@ -296,6 +300,10 @@ internal class AppSettingsPreferences(
             externalInterfaces = preferences.getStringList(KeyExternalInterfaces, defaults.externalInterfaces),
             ignoredInterfaces = preferences.getStringList(KeyIgnoredInterfaces, defaults.ignoredInterfaces),
             privateAddressCidrs = preferences.getStringList(KeyPrivateAddressCidrs, defaults.privateAddressCidrs),
+            tailnetManagedPrivateAddressCidrs = preferences.getStringList(
+                KeyTailnetManagedPrivateAddressCidrs,
+                defaults.tailnetManagedPrivateAddressCidrs,
+            ),
             proxyAppListMode = preferences.getInt(KeyProxyAppListMode, defaults.proxyAppListMode),
         ).withNormalizedConnectionTestSettings()
     }
@@ -335,6 +343,7 @@ internal class AppSettingsPreferences(
             .putString(KeyMihomoControlSecret, state.mihomoControlSecret)
             .putBoolean(KeyEnableLocalDns, state.enableLocalDns)
             .putBoolean(KeyTailnetInboundForwardsEnabled, state.tailnetInboundForwardsEnabled)
+            .putBoolean(KeyTailnetPrivateAddressSyncEnabled, state.tailnetPrivateAddressSyncEnabled)
             .putString(KeyLocalProxyPort, state.localProxyPort)
             .putBoolean(KeyEnableDynamicLocalProxyPort, state.enableDynamicLocalProxyPort)
             .putBoolean(KeyLocalProxyListenAllInterfaces, state.localProxyListenAllInterfaces)
@@ -415,6 +424,7 @@ internal class AppSettingsPreferences(
             .putStringList(KeyExternalInterfaces, state.externalInterfaces)
             .putStringList(KeyIgnoredInterfaces, state.ignoredInterfaces)
             .putStringList(KeyPrivateAddressCidrs, state.privateAddressCidrs)
+            .putStringList(KeyTailnetManagedPrivateAddressCidrs, state.tailnetManagedPrivateAddressCidrs)
             .putInt(KeyProxyAppListMode, state.proxyAppListMode)
     }
 
@@ -570,6 +580,7 @@ private const val KeyMihomoControlPort = "mihomo_control_port"
 private const val KeyMihomoControlSecret = "mihomo_control_secret"
 private const val KeyEnableLocalDns = "enable_local_dns"
 private const val KeyTailnetInboundForwardsEnabled = "tailnet_inbound_forwards_enabled"
+private const val KeyTailnetPrivateAddressSyncEnabled = "tailnet_private_address_sync_enabled"
 private const val KeyLocalProxyPort = "local_proxy_port"
 private const val KeyEnableDynamicLocalProxyPort = "enable_dynamic_local_proxy_port"
 private const val KeyLocalProxyListenAllInterfaces = "local_proxy_listen_all_interfaces"
@@ -662,6 +673,7 @@ private const val KeyTunBypassRuleSetTags = "tun_bypass_rule_set_tags"
 private const val KeyExternalInterfaces = "external_interfaces"
 private const val KeyIgnoredInterfaces = "ignored_interfaces"
 private const val KeyPrivateAddressCidrs = "private_address_cidrs"
+private const val KeyTailnetManagedPrivateAddressCidrs = "tailnet_managed_private_address_cidrs"
 private const val KeyProxyAppListMode = "proxy_app_list_mode"
 
 internal const val KeyServiceControlKeyguardEnabled = "service_control_keyguard_enabled"

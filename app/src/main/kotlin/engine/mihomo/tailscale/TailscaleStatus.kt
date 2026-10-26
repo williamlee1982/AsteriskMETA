@@ -24,6 +24,12 @@ internal sealed interface TailscaleBackendState {
         val magicDnsSuffix: String? = null,
         /** Null means the core predates inbound-forward status support. */
         val inboundForwards: List<TailscaleInboundForwardStatus>? = null,
+        /**
+         * Tailscale addresses of other nodes in this node's netmap.
+         * Null when the core did not report peers. Empty when it did and there are none.
+         * Hostnames, endpoints and keys are never included.
+         */
+        val peerIps: List<String>? = null,
     ) : TailscaleBackendState
 
     /** Use [tailscaleBackendError] so the message is always redacted. */

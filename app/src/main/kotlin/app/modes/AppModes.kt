@@ -19,6 +19,13 @@ fun Int.isRootRunMode(): Boolean {
 fun Int.supportsAppListEnhancement(): Boolean =
     this == RunModeTproxy || this == RunModeTun2Socks || this == RunModeBpf2Socks
 
+/**
+ * ROOT modes whose asteriskd rules consult **Private addresses**.
+ * VPN captures the default route and ROOT TUN uses Mihomo's own TUN, so neither reads the list.
+ */
+fun Int.usesPrivateAddressRouting(): Boolean =
+    this == RunModeTproxy || this == RunModeTun2Socks || this == RunModeBpf2Socks
+
 
 const val MihomoModeRule = 0
 const val MihomoModeGlobal = 1

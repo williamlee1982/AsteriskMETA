@@ -6,6 +6,7 @@ package features.mihomo.tailscale
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
@@ -43,6 +44,8 @@ internal fun TailnetStatusCard(
     /** A restart applying the switch is in progress. */
     inboundForwardsBusy: Boolean = false,
     onInboundForwardsEnabledChange: (Boolean) -> Unit = {},
+    privateAddressSyncEnabled: Boolean = true,
+    onPrivateAddressSyncEnabledChange: (Boolean) -> Unit = {},
 ) {
     AsteriskPageCard(modifier = modifier) {
         Column(
@@ -87,6 +90,32 @@ internal fun TailnetStatusCard(
                     actionsEnabled = busyOutbound == null,
                     onLogIn = { onLogIn(outbound) },
                     onLogOut = { onLogOut(outbound) },
+                )
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.tailnet_private_address_sync_toggle),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    Text(
+                        text = stringResource(R.string.tailnet_private_address_sync_summary),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Switch(
+                    checked = privateAddressSyncEnabled,
+                    onCheckedChange = onPrivateAddressSyncEnabledChange,
+                )
+            }
+            if (presentation.peerListUnavailable) {
+                Text(
+                    text = stringResource(R.string.tailnet_private_address_sync_core_missing),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             presentation.rootRouting?.let { hint ->

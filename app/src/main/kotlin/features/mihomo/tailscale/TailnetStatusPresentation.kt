@@ -3,9 +3,7 @@
 
 package features.mihomo.tailscale
 
-import app.modes.RunModeBpf2Socks
-import app.modes.RunModeTproxy
-import app.modes.RunModeTun2Socks
+import app.modes.usesPrivateAddressRouting
 import engine.mihomo.tailscale.TailnetOutboundKey
 import engine.mihomo.tailscale.TailnetInboundForward
 import engine.mihomo.tailscale.TailscaleInboundForwardState
@@ -109,6 +107,8 @@ internal data class TailnetStatusPresentation(
     /** Set when the list comes from the profile file because the core cannot report it. */
     val profileFallback: TailscaleStatusUnavailableReason? = null,
     val showAclHint: Boolean = false,
+    /** A Running node omitted peer addresses, so private-address sync has nothing to merge. */
+    val peerListUnavailable: Boolean = false,
 ) {
     val visible: Boolean get() = outbounds.isNotEmpty()
 }
@@ -122,19 +122,23 @@ internal fun buildTailnetStatusPresentation(
     statuses: TailscaleStatusQuery,
     inboundForwardsEnabled: Boolean = false,
 ): TailnetStatusPresentation {
-    if (card.outbounds.isEmpty()) return TailnetStatusPresentation(emptyList(), rootRouting = null)
+    if (card.outbounds.isEmpty()) return TailnetStatusPresentation(emptyList(), rootRouting = null, peerListUnavailable = false)
     // Outbounds whose options are unknown get no state-dir findings rather than guessed ones.
     // Running outbounds and profile entries the core does not run are checked separately, so a
     // stale profile entry never reports a running outbound's directory as shared.
     val findings = card.outbounds.filter { it.configKnown }.groupBy { it.source }.values.flatMap { group ->
         group.zip(diagnoseTailscaleStateDirs(group.map { it.outbound }, mihomoHomeDirectory, ownPackageName))
     }.associate { (entry, finding) -> entry.outbound.key to finding }
-    val rootRouting = if (runMode in PrivateAddressRootModes) {
+    val rootRouting = if (runMode.usesPrivateAddressRouting()) {
         val overrides = tailnetPrivateAddressOverrides(privateAddressCidrs)
         TailnetRootRoutingHint(overrides.hostOverrides.size, overrides.broadOverrides)
     } else {
         null
     }
+    val running = (statuses as? TailscaleStatusQuery.Available)
+        ?.outbounds
+        .orEmpty()
+        .mapNotNull { outbound -> outbound.state as? TailscaleBackendState.Running }
     val anyForward = card.outbounds.any { it.outbound.inboundForwards.isNotEmpty() }
     return TailnetStatusPresentation(
         outbounds = card.outbounds.map { entry ->
@@ -164,6 +168,7 @@ internal fun buildTailnetStatusPresentation(
         rootRouting = rootRouting,
         profileFallback = card.profileFallback,
         showAclHint = anyForward,
+        peerListUnavailable = running.isNotEmpty() && running.all { state -> state.peerIps == null },
     )
 }
 
@@ -229,5 +234,3 @@ private fun TailscaleBackendState.Running.reachableAddress(listen: Int): String?
         ?: tailnetAddresses.firstOrNull { it.matches(Regex("\\d{1,3}(?:\\.\\d{1,3}){3}")) }
     return host?.let { "$it:$listen" }
 }
-
-private val PrivateAddressRootModes = setOf(RunModeTproxy, RunModeTun2Socks, RunModeBpf2Socks)
