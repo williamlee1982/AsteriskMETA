@@ -11,15 +11,15 @@ import org.gradle.api.tasks.TaskAction
 object ProjectConfig {
     const val JVM_VERSION = 26
     const val PROJECT_NAME = "AsteriskMETA"
-    const val VERSION_NAME = "1.2.25"
+    const val VERSION_NAME = "1.2.26"
     const val PACKAGE_NAME = "org.asterisk.zcc.ameta"
     const val ASTERISKD_VERSION = "v2.1.11-wl.2"
     const val BPF2SOCKS_VERSION = "v1.1.6"
     const val BPF_MATCHER_VERSION = "v1.0.2"
-    const val ENHANCE_VERSION = "v1.0.7"
-    const val ANDROID_LIB_CLASH_LITE_VERSION = "v1.19.32-android.5-tailscale.5"
+    const val ENHANCE_VERSION = "v1.0.8"
+    const val ANDROID_LIB_CLASH_LITE_VERSION = "v1.19.33-android.1-tailscale.1"
     /** SHA-256 of the release libclash.aar; checked by :app:verifyLibclashAar. */
-    const val ANDROID_LIB_CLASH_LITE_SHA256 = "7e50441a80e594074e3534af3f3cdb20dbca568b58e3f5ef61f0f52045fd153b"
+    const val ANDROID_LIB_CLASH_LITE_SHA256 = "7066f2f74a1e2adc6fc918099bf1d449f1a0686582c922608e4ad8fe737a3373"
     const val HEV_SOCKS5_TUNNEL_VERSION = "2.18.0"
     const val TARGET_SDK = 37
     const val TARGET_SDK_MINOR = 2

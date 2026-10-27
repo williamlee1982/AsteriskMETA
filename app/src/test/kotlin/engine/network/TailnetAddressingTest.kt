@@ -5,6 +5,7 @@ package engine.network
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -34,6 +35,22 @@ class TailnetAddressingTest {
         )
         assertTrue(overrides.hostOverrides.isEmpty())
         assertTrue(overrides.broadOverrides.isEmpty())
+    }
+
+    @Test
+    fun canonicalFormCollapsesEquivalentAddresses() {
+        assertEquals("100.101.102.103/32", canonicalIpCidrOrNull(" 100.101.102.103/32 "))
+        assertEquals("10.1.2.3/8", canonicalIpCidrOrNull("010.001.002.003/8"))
+        assertEquals("fd7a:115c:a1e0::1/128", canonicalIpCidrOrNull("FD7A:115C:A1E0:0:0:0:0:1/128"))
+        assertEquals("fd7a:115c:a1e0::1/128", canonicalIpCidrOrNull("fd7a:115c:a1e0::1/128"))
+        assertEquals("2001:db8::1:0:0:1", canonicalIpOrNull("2001:0db8:0:0:1:0:0:1"))
+        assertEquals("::1", canonicalIpOrNull("0:0:0:0:0:0:0:1"))
+        assertNull(canonicalIpCidrOrNull("not-a-cidr"))
+        assertNull(canonicalTailnetHostCidrOrNull("100.64.0.0/10"))
+        assertEquals("100.101.102.103/32", canonicalTailnetHostCidrOrNull("100.101.102.103"))
+        assertEquals("fd7a:115c:a1e0::5/128", canonicalTailnetHostCidrOrNull("fd7a:115c:a1e0:0:0:0:0:5/128"))
+        assertNull(canonicalTailnetHostCidrOrNull("8.8.8.8"))
+        assertNull(canonicalTailnetHostCidrOrNull("fd00::1"))
     }
 
     @Test

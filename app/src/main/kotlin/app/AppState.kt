@@ -66,6 +66,12 @@ data class AppState(
     val enableLocalDns: Boolean = true,
     /** Keeps configured Tailscale inbound forwards online in the active core. */
     val tailnetInboundForwardsEnabled: Boolean = false,
+    /**
+     * Writes other devices' tailnet addresses into [privateAddressCidrs].
+     * On by default: TPROXY, TUN2SOCKS and BPF2SOCKS otherwise bypass the whole Tailnet range,
+     * so a Tailscale outbound never sees that traffic. Turn it off to edit the list by hand.
+     */
+    val tailnetPrivateAddressSyncEnabled: Boolean = true,
 
     val localProxyPort: String = VpnDefaults.LOCAL_PROXY_PORT.toString(),
     val enableDynamicLocalProxyPort: Boolean = false,
@@ -157,6 +163,11 @@ data class AppState(
     val externalInterfaces: List<String> = emptyList(),
     val ignoredInterfaces: List<String> = emptyList(),
     val privateAddressCidrs: List<String> = emptyList(),
+    /**
+     * Host CIDRs last written by tailnet peer sync. Entries outside this list are the user's
+     * and are never removed by sync. Not shown as its own setting.
+     */
+    val tailnetManagedPrivateAddressCidrs: List<String> = emptyList(),
 
     val proxyAppListMode: Int = ProxyAppListModeGlobal,
     val proxyAppListSelectedApps: List<String> = emptyList(),

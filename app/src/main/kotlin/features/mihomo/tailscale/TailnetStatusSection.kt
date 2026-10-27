@@ -108,7 +108,13 @@ internal fun TailnetStatusSection(
     val scope = rememberCoroutineScope()
     val statuses = statusState.statuses
 
-    val presentation = remember(card, appState.runMode, appState.privateAddressCidrs, statuses, appState.tailnetInboundForwardsEnabled) {
+    val presentation = remember(
+        card,
+        appState.runMode,
+        appState.privateAddressCidrs,
+        statuses,
+        appState.tailnetInboundForwardsEnabled,
+    ) {
         buildTailnetStatusPresentation(
             card = card,
             runMode = appState.runMode,
@@ -154,6 +160,10 @@ internal fun TailnetStatusSection(
                     statusState.refresh()
                 }
             }
+        },
+        privateAddressSyncEnabled = appState.tailnetPrivateAddressSyncEnabled,
+        onPrivateAddressSyncEnabledChange = { enabled ->
+            updateAppState { state -> state.copy(tailnetPrivateAddressSyncEnabled = enabled) }
         },
         busyOutbound = busyOutbound,
         onLogIn = { outbound ->

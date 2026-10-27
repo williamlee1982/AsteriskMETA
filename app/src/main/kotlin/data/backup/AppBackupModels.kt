@@ -54,6 +54,7 @@ internal data class AppBackupSettings(
     val mihomoControlPort: String = BackupDefaults.mihomoControlPort,
     val mihomoControlSecret: String = BackupDefaults.mihomoControlSecret,
     val enableLocalDns: Boolean = BackupDefaults.enableLocalDns,
+    val tailnetPrivateAddressSyncEnabled: Boolean = BackupDefaults.tailnetPrivateAddressSyncEnabled,
     val localProxyPort: String = BackupDefaults.localProxyPort,
     val enableDynamicLocalProxyPort: Boolean = BackupDefaults.enableDynamicLocalProxyPort,
     val localProxyListenAllInterfaces: Boolean = BackupDefaults.localProxyListenAllInterfaces,
@@ -132,6 +133,7 @@ internal data class AppBackupSettings(
     val externalInterfaces: List<String> = BackupDefaults.externalInterfaces,
     val ignoredInterfaces: List<String> = BackupDefaults.ignoredInterfaces,
     val privateAddressCidrs: List<String> = BackupDefaults.privateAddressCidrs,
+    val tailnetManagedPrivateAddressCidrs: List<String> = BackupDefaults.tailnetManagedPrivateAddressCidrs,
     val proxyAppListMode: Int = BackupDefaults.proxyAppListMode,
 )
 
@@ -139,6 +141,7 @@ internal data class AppBackupSettings(
 @Serializable
 internal data class AppBackupAutoSwitch(
     val enabled: Boolean = BackupDefaults.autoSwitch.enabled,
+    val restore: Boolean = BackupDefaults.autoSwitch.restore,
     val profileId: Int = BackupDefaults.autoSwitch.profileId,
     val groups: List<String> = BackupDefaults.autoSwitch.groups,
     val preferredRegions: List<String> = BackupDefaults.autoSwitch.preferredRegions,

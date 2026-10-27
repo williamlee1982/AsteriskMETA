@@ -51,8 +51,22 @@ class TailscaleStatusTest {
             states["running"],
         )
         assertEquals(TailscaleBackendState.Error("dial failed"), states["broken"])
+        assertNull((states["running"] as TailscaleBackendState.Running).peerIps)
         assertTrue(states["future"] is TailscaleBackendState.Error)
         assertFalse("unnamed entries are dropped", states.containsKey(""))
+    }
+
+    @Test
+    fun runningStatusParsesPeerAddressesWithoutRequiringThem() {
+        val withPeers = parseTailscaleCoreStatuses(
+            """{"outbounds":[{"name":"ts","state":"Running","tailnetIps":["100.101.102.10"],"peerIps":[" 100.101.102.103 ","fd7a:115c:a1e0::5",""]}]}""",
+        ).single().state as TailscaleBackendState.Running
+        assertEquals(listOf("100.101.102.103", "fd7a:115c:a1e0::5"), withPeers.peerIps)
+
+        val none = parseTailscaleCoreStatuses(
+            """{"outbounds":[{"name":"ts","state":"Running","tailnetIps":[],"peerIps":[]}]}""",
+        ).single().state as TailscaleBackendState.Running
+        assertEquals(emptyList<String>(), none.peerIps)
     }
 
     @Test

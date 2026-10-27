@@ -51,6 +51,29 @@ class TailnetStatusPresentationTest {
     }
 
     @Test
+    fun runningCoreWithoutPeerIpsShowsThatSyncHasNothingToMerge() {
+        val missing = build(
+            listOf(outbound("TS", "./ts")),
+            RunModeTproxy,
+            coreStates("TS" to TailscaleBackendState.Running(listOf("100.101.102.103"), "node")),
+        )
+        assertTrue(missing.peerListUnavailable)
+
+        val reported = build(
+            listOf(outbound("TS", "./ts")),
+            RunModeTproxy,
+            coreStates(
+                "TS" to TailscaleBackendState.Running(
+                    tailnetAddresses = listOf("100.101.102.103"),
+                    hostname = "node",
+                    peerIps = emptyList(),
+                ),
+            ),
+        )
+        assertFalse(reported.peerListUnavailable)
+    }
+
+    @Test
     fun rootTransparentModesExplainPrivateAddressOverrides() {
         val source = coreStates("TS" to TailscaleBackendState.Starting)
         val none = build(listOf(outbound("TS", "./ts")), RunModeTproxy, source, privateAddressCidrs = emptyList())

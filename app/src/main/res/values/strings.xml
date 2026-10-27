@@ -1006,6 +1006,8 @@
     <string name="settings_auto_switch">Automatic switching</string>
     <string name="settings_auto_switch_summary">Regions, failure threshold and check interval</string>
     <string name="auto_switch_enabled">Enable automatic switching</string>
+    <string name="auto_switch_restore">Switch back</string>
+    <string name="auto_switch_restore_summary">Return to the original proxy after 3 successful checks</string>
     <string name="auto_switch_log_title">Switching history</string>
     <string name="auto_switch_log_summary">View the next check, group status and recent core events</string>
     <string name="auto_switch_log_empty">No failures or automatic switches recorded yet</string>
@@ -1019,6 +1021,7 @@
     <string name="auto_switch_progress_current">%1$s: checking the selected node</string>
     <string name="auto_switch_progress_preferred">%1$s: checking preferred nodes · %2$d/%3$d</string>
     <string name="auto_switch_progress_all">%1$s: checking candidate nodes · %2$d/%3$d</string>
+    <string name="auto_switch_progress_restore">%1$s: checking the previously selected node</string>
     <plurals name="auto_switch_log_countdown">
         <item quantity="one">Next check in %1$d second</item>
         <item quantity="other">Next check in %1$d seconds</item>
@@ -1028,14 +1031,16 @@
     <string name="auto_switch_group_failed">%1$s: %2$s · consecutive failures: %3$d</string>
     <string name="auto_switch_group_skipped">%1$s: %2$s is not a monitored node</string>
     <string name="auto_switch_group_unavailable">%1$s: not a manual selection group in the current profile or mode</string>
+    <string name="auto_switch_group_restore_pending">\u0020· switch back to %1$s after consecutive successes: %2$d/%3$d</string>
     <string name="auto_switch_event_failed">%1$s failed the health check (%2$d/%3$d)</string>
     <string name="auto_switch_event_switched">Switched from %1$s to %2$s · %3$d ms (available: %4$d/%5$d)</string>
     <string name="auto_switch_event_switched_preferred">Switched from %1$s to preferred node %2$s · %3$d ms (available: %4$d/%5$d)</string>
     <string name="auto_switch_event_no_replacement">No healthy replacement for %1$s (candidates tested: %2$d). The selection is kept.</string>
     <string name="auto_switch_event_selection_changed">The selection changed during the check. %1$s was not replaced.</string>
+    <string name="auto_switch_event_restored">Switched back from %1$s to previously selected node %2$s · %3$d ms</string>
     <string name="auto_switch_info">Details</string>
     <string name="auto_switch_policy_title">How automatic switching works</string>
-    <string name="auto_switch_policy">Checks run inside the core while the proxy service is running, so the app does not need to stay in the background.\n\nThey use the test URL, timeout and concurrency from Connection test.\n\nAfter the consecutive failure count is reached, preferred nodes are tested first, starting with those that were fastest in earlier tests. With a nonzero expected latency, the first healthy node below it is selected and the remaining nodes are not tested. With zero, or when no node meets it, the lowest-latency healthy node is selected. Other nodes are tested only when no preferred node is healthy.\n\nHealthy and manually changed selections are kept. When no node is healthy, the selection is kept and later scans back off.\n\nRequires the built-in core; an uploaded custom Mihomo core does not support it.</string>
+    <string name="auto_switch_policy">Checks run inside the core while the proxy service is running, so the app does not need to stay in the background.\n\nThey use the test URL, timeout and concurrency from Connection test.\n\nAfter the consecutive failure count is reached, preferred nodes are tested first, starting with those that were fastest in earlier tests. With a nonzero expected latency, the first healthy node below it is selected and the remaining nodes are not tested. With zero, or when no node meets it, the lowest-latency healthy node is selected. Other nodes are tested only when no preferred node is healthy.\n\nHealthy and manually changed selections are kept. When no node is healthy, the selection is kept and later scans back off.\n\nWith Switch back on, the node selected before the first automatic switch is checked every interval and selected again after 3 consecutive successes. Changing the selection manually cancels this.\n\nRequires the built-in core; an uploaded custom Mihomo core does not support it.</string>
     <string name="auto_switch_policy_raw">This profile uses its raw configuration. The core follows the asterisk-auto-switch key in that configuration; these settings are saved but not applied.</string>
     <string name="auto_switch_groups">Monitored policy groups</string>
     <string name="auto_switch_groups_summary">Choose at least one manual selection group in the current profile.\n\nOnly nodes selected directly are monitored. DIRECT, REJECT, nested groups and core-managed automatic groups are left unchanged.\n\nAfter changing profiles, select groups again.</string>
@@ -1081,6 +1086,9 @@
     <string name="tailnet_state_dir_shared_storage">state-dir is on shared storage that other apps can read</string>
     <string name="tailnet_root_no_host_override">ROOT transparent mode bypasses %1$s. Add Tailnet hosts as /32 entries under Private addresses to route them through the core.</string>
     <string name="tailnet_root_host_overrides">Tailnet host overrides in Private addresses: %1$d</string>
+    <string name="tailnet_private_address_sync_toggle">Route tailnet peers</string>
+    <string name="tailnet_private_address_sync_summary">Adds other devices\' tailnet addresses to Private addresses and removes them when those devices leave the tailnet. Addresses you add yourself are kept. TPROXY, TUN2SOCKS and BPF2SOCKS restart the proxy when the list changes so those addresses enter the core. VPN and ROOT TUN do not use this list.</string>
+    <string name="tailnet_private_address_sync_core_missing">This core does not report other devices\' addresses, so Private addresses are not updated automatically.</string>
     <string name="tailnet_status_checking">Checking…</string>
     <string name="tailnet_status_idle">Not started; starts on first use</string>
     <string name="tailnet_status_not_in_running_config">Not in the running configuration; restart the proxy to apply profile changes</string>

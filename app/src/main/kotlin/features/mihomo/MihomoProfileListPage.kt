@@ -479,6 +479,8 @@ fun MihomoProfileListPage(
                                     updatedAtMillis = completedAtMillis,
                                     contentStore = services.mihomoProfileContentStore,
                                     updateAppState = updateAppState,
+                                    // "Update all" is user-initiated: unscheduled profiles count too.
+                                    requireScheduled = false,
                                 )
                                 updatedProfileIds += acceptedProfileIds
                                 updatedCount += acceptedProfileIds.size

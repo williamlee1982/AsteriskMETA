@@ -31,6 +31,8 @@ internal data class TailscaleCoreStatus(
     val provider: String? = null,
     val config: TailscaleCoreConfig? = null,
     val inboundForwards: List<TailscaleCoreInboundForward>? = null,
+    /** Absent on cores that still call StatusWithoutPeers. Empty when the netmap has no peers. */
+    val peerIps: List<String>? = null,
 )
 
 @Serializable
@@ -105,6 +107,7 @@ internal fun TailscaleCoreStatus.toBackendState(): TailscaleBackendState = when 
         dnsName = dnsName?.trim()?.removeSuffix(".")?.takeIf(String::isNotEmpty),
         magicDnsSuffix = magicDnsSuffix?.trim()?.removeSuffix(".")?.takeIf(String::isNotEmpty),
         inboundForwards = inboundForwards?.map { it.toInboundForwardStatus() },
+        peerIps = peerIps?.map(String::trim)?.filter(String::isNotEmpty),
     )
     "Error" -> tailscaleBackendError(error?.takeIf(String::isNotBlank) ?: "Tailscale error")
     else -> tailscaleBackendError("Unknown Tailscale backend state")

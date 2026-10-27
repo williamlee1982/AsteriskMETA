@@ -21,13 +21,14 @@ rules:
 ```
 
 Facts established from the sources (AsteriskMETA `main`, AndroidLibClashLite `main` + the
-Tailscale state API and inbound forwards (`v1.19.32-android.5-tailscale.5`), Mihomo stable `v1.19.32`, tailscale v1.104.1):
+Tailscale state API and inbound forwards (`v1.19.33-android.1-tailscale.1`), Mihomo stable `v1.19.33`, tailscale v1.104.1):
 
 | Area | Behavior | Where |
 | --- | --- | --- |
 | Local proxy port | The profile's `mixed-port` is always replaced by the app's *local proxy port* setting (default `10809`, `VpnDefaults.LOCAL_PROXY_PORT`). `port`/`socks-port` are forced to `0` unless a ROOT mode needs them; bind address is `127.0.0.1` unless LAN access is enabled. | `engine/mihomo/MihomoProfile.kt` |
-| ROOT private ranges | ROOT rules bypass reserved ranges including `100.64.0.0/10` and `fc00::/7`. Entries in **Private addresses** become proxy-private CIDRs that asteriskd evaluates *before* the bypass list. A YAML `IP-CIDR` rule alone therefore does **not** capture transparent ROOT traffic to Tailnet peers. | `engine/root/config/RootNetworkPolicy.kt`, `AsteriskdConfigCompiler.kt`, `asteriskd_runtime.c` |
-| ROOT TUN | TUN and eBPF modes do not use the private-address lists; Mihomo's TUN routes instead. | `AsteriskdConfigCompiler.kt` |
+| ROOT private ranges | ROOT rules bypass reserved ranges including `100.64.0.0/10` and `fc00::/7`. Entries in **Private addresses** become proxy-private CIDRs that asteriskd evaluates *before* the bypass list. A YAML `IP-CIDR` rule alone therefore does **not** capture transparent ROOT traffic to Tailnet peers. TPROXY, TUN2SOCKS and BPF2SOCKS are the modes that read the list. | `engine/root/config/RootNetworkPolicy.kt`, `AsteriskdConfigCompiler.kt`, `asteriskd_runtime.c` |
+| ROOT TUN | TUN does not use the private-address list; Mihomo's TUN routes instead. | `AsteriskdConfigCompiler.kt` |
+| VPN | The VPN installs a default route. **Private addresses** are not consulted, and tailnet peer sync does not restart the VPN or call any ROOT API. | `engine/vpn/AsteriskVpnService.kt` |
 | Mihomo home | Both the embedded VPN core (`Libclash.init(<filesDir>/clash)`) and the ROOT core (`mihomo -d <filesDir>/clash`) use the same home, now shared through `mihomoHomeDirectory()`. Relative `state-dir` values resolve identically in both modes. | `engine/mihomo/MihomoHome.kt` |
 | `state-dir` | Empty means `tailscale`; relative paths are joined to the home; absolute paths are kept. The embedded core is a CMFA build and accepts any path; the ROOT core (CLI build, CMFA disabled) rejects paths outside the home unless `SAFE_PATHS` is set. | Mihomo `adapter/outbound/tailscale.go`, `constant/path.go`; AndroidLibClashLite `scripts/prepare_sources.py` |
 | ROOT core identity | asteriskd starts the ROOT core as uid `0`, gid `3005`. Files created in ROOT mode are owned by root. | `asteriskd_core.c` |
@@ -80,7 +81,7 @@ API (both the JNI export and the authenticated Clash controller group):
 
 | Route / JNI | Result |
 | --- | --- |
-| `GET /asterisk/tailscale` / `queryTailscaleStatus()` | `{"outbounds":[{name,state,loginUrlAvailable,tailnetIps,hostname,dnsName,magicDnsSuffix,health,error}]}`; never starts tsnet, never carries a URL |
+| `GET /asterisk/tailscale` / `queryTailscaleStatus()` | `{"outbounds":[{name,state,loginUrlAvailable,tailnetIps,peerIps,hostname,dnsName,magicDnsSuffix,health,error}]}`; never starts tsnet, never carries a URL. The pinned `v1.19.33-android.1-tailscale.1` core calls `Status` and a queried netmap includes `peerIps` (other nodes' tailnet addresses, or `[]`). Older cores call `StatusWithoutPeers` and omit the field. |
 | `POST /asterisk/tailscale/login?name=` / `startTailscaleLogin` | 202; starts tsnet if needed and requests an interactive login |
 | `GET /asterisk/tailscale/login-url?name=` / `queryTailscaleLoginURL` | The pending URL, on demand, `Cache-Control: no-store`; HTTP returns 403 unless the controller has a secret |
 | `POST /asterisk/tailscale/logout?name=` / `logoutTailscale` | 204; deauthorizes the node |
@@ -186,7 +187,7 @@ this workspace, so no sibling implementation was changed.
 Inbound forwarding is an opt-in, TCP-only way for another device on the Tailnet to reach a
 service listening on the phone. It requires an inbound-capable core (`v1.19.32-android.5-tailscale.4`
 or newer; the private-LAN target rule, state-dir conflict check and Accept backoff need
-`tailscale.5`), which the app pins (`tailscale.5`, AAR SHA-256 `7e50441a…45fd153b`, checked by
+`tailscale.5`), which the app pins (`v1.19.33-android.1-tailscale.1`, AAR SHA-256 `7066f2f7…737a3373`, checked by
 `:app:verifyLibclashAar`).
 
 Declare forwards on a **top-level** `type: tailscale` outbound. The app does not invent targets or
@@ -261,6 +262,18 @@ forwarding; the card shows the core's 「unsupported in proxy providers」 row f
 load. Give every tailscale proxy its own `state-dir`: a forwarding proxy sharing one with another
 proxy of the same profile is not started and shows `state-dir shared with …`.
 
+## Tailnet peers and Private addresses
+
+The home Tailnet card has **Route tailnet peers** (default on). While it is on and a Running outbound reports `peerIps`, the app merges other devices' tailnet addresses into **Private addresses**:
+
+* IPv4 hosts are stored as `/32` and IPv6 hosts as `/128`, and only when they fall in `100.64.0.0/10` or `fd7a:115c:a1e0::/48`. Wider prefixes and this device's own addresses are ignored.
+* Addresses the user added are kept, including when the same host is also a peer and later leaves the tailnet. Textual duplicates (`fd7a:115c:a1e0::1` and `fd7a:115c:a1e0:0:0:0:0:1`) are not added twice.
+* A device that disappears from the netmap loses the entry the app added. A device that is only offline stays, so a sleeping peer is still routed into the core.
+* The pinned `v1.19.33-android.1-tailscale.1` core calls `Status`, not `StatusWithoutPeers`, and returns `peerIps` once it has read the netmap: canonical tailnet addresses of other devices, or `[]` when there are none. The field is omitted only when peers were not queried. Omission, a failed query, or a node that is not Running leaves the list unchanged, and the card says so if a Running node omits the field. On this core a Running node includes `peerIps`, so the switch updates Private addresses. An older core that still omits the field leaves the switch with nothing to merge.
+* Turning the switch off removes only the entries the app added.
+* Sync runs for the life of the app process, on the same poll interval as the Tailnet card, and also when the switch, run mode, IPv6 setting or private-address list changes. Logs record counts only.
+* TPROXY, TUN2SOCKS and BPF2SOCKS restart the proxy when the routing-relevant list changes, because asteriskd installs those CIDRs at start and the Clash API cannot update them. IPv6 hosts do not restart the proxy while IPv6 is disabled. VPN and ROOT TUN persist the list and do not restart.
+
 ## Known limitations
 
 * The DNS defaults below (`asterisk-tailnet-dns`) are computed from the profile file, so a
@@ -278,4 +291,4 @@ proxy of the same profile is not started and shows `state-dir shared with …`.
 
 * Inbound forwarding currently supports TCP listeners to IP-literal targets only. UDP, TLS
   termination, and the in-app forward editor remain out of scope for this phase.
-* Device list and exit-node management only after typed interfaces exist.
+* A device list and exit-node controls still wait on a typed interface. Peer addresses for **Private addresses** are `peerIps` from the pinned `v1.19.33-android.1-tailscale.1` core, which reads them with `Status`.

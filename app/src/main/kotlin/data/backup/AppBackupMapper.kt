@@ -82,6 +82,7 @@ private fun AppState.toBackupSettings(): AppBackupSettings =
         mihomoControlPort = mihomoControlPort,
         mihomoControlSecret = mihomoControlSecret,
         enableLocalDns = enableLocalDns,
+        tailnetPrivateAddressSyncEnabled = tailnetPrivateAddressSyncEnabled,
         localProxyPort = localProxyPort,
         enableDynamicLocalProxyPort = enableDynamicLocalProxyPort,
         localProxyListenAllInterfaces = localProxyListenAllInterfaces,
@@ -160,12 +161,14 @@ private fun AppState.toBackupSettings(): AppBackupSettings =
         externalInterfaces = externalInterfaces,
         ignoredInterfaces = ignoredInterfaces,
         privateAddressCidrs = privateAddressCidrs,
+        tailnetManagedPrivateAddressCidrs = tailnetManagedPrivateAddressCidrs,
         proxyAppListMode = proxyAppListMode,
     )
 
 private fun AutoSwitchSettings.toBackup(): AppBackupAutoSwitch =
     AppBackupAutoSwitch(
         enabled = enabled,
+        restore = restore,
         profileId = profileId,
         groups = groups,
         preferredRegions = preferredRegions,
@@ -178,6 +181,7 @@ private fun AutoSwitchSettings.toBackup(): AppBackupAutoSwitch =
 private fun AppBackupAutoSwitch.toState(): AutoSwitchSettings =
     AutoSwitchSettings(
         enabled = enabled,
+        restore = restore,
         profileId = profileId,
         groups = groups,
         preferredRegions = preferredRegions,
@@ -306,6 +310,7 @@ private fun AppBackupData.toAppState(): AppState {
         mihomoControlPort = settings.mihomoControlPort,
         mihomoControlSecret = settings.mihomoControlSecret,
         enableLocalDns = settings.enableLocalDns,
+        tailnetPrivateAddressSyncEnabled = settings.tailnetPrivateAddressSyncEnabled,
         localProxyPort = settings.localProxyPort,
         enableDynamicLocalProxyPort = settings.enableDynamicLocalProxyPort,
         localProxyListenAllInterfaces = settings.localProxyListenAllInterfaces,
@@ -388,6 +393,7 @@ private fun AppBackupData.toAppState(): AppState {
         externalInterfaces = settings.externalInterfaces,
         ignoredInterfaces = settings.ignoredInterfaces,
         privateAddressCidrs = settings.privateAddressCidrs,
+        tailnetManagedPrivateAddressCidrs = settings.tailnetManagedPrivateAddressCidrs,
         proxyAppListMode = settings.proxyAppListMode,
         proxyAppListSelectedApps = proxyAppListSelectedApps,
     ).withCompatibleProxyAppListMode().withNormalizedConnectionTestSettings()
