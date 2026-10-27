@@ -201,7 +201,7 @@ private fun ProxyProviderStatusCard(
         status = updated,
         controls = {
             Text(
-                text = stringResource(R.string.mihomo_provider_proxy_servers_count)
+                text = stringResource(R.string.mihomo_provider_proxies_count)
                     .formatTemplate("count" to state.nodeCount),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
@@ -366,13 +366,15 @@ private fun MihomoProxyProviderCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = provider.sourceSummary.ifBlank { vehicleText },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (provider.sourceSummary.isNotBlank()) {
+                    Text(
+                        text = provider.sourceSummary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 runtimeDetail?.subscriptionInfo
                     ?.takeIf { info -> info.hasProviderTrafficInfo() }
                     ?.let { info -> MihomoProxyProviderTrafficInfo(info = info) }
@@ -504,13 +506,15 @@ private fun MihomoRuleProviderCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = provider.sourceSummary.ifBlank { vehicleText },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (provider.sourceSummary.isNotBlank()) {
+                    Text(
+                        text = provider.sourceSummary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Text(
                     text = runtimeText,
                     style = MaterialTheme.typography.bodySmall,
@@ -672,7 +676,7 @@ private fun MihomoProviderDeclaration.proxyRuntimeSummaryText(
     runtimeDetail: MihomoProxyProviderRuntimeDetail?,
 ): String {
     val nodeText = runtimeDetail?.nodes?.size?.let { count ->
-        stringResource(R.string.mihomo_provider_proxy_servers_count).formatTemplate("count" to count)
+        stringResource(R.string.mihomo_provider_proxies_count).formatTemplate("count" to count)
     }
     val updatedText = runtimeDetail?.updatedAtMillis
         ?.takeIf { timestamp -> timestamp > 0L }

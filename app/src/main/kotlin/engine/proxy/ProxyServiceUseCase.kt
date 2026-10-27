@@ -4,6 +4,7 @@
 package engine.proxy
 
 import app.AppState
+import app.modes.RunModeVpnService
 import engine.mihomo.requireUsableMihomoProfile
 import engine.root.runtime.RootFailureKind
 import engine.root.runtime.RootLifecycleTrigger
@@ -61,6 +62,39 @@ internal class ProxyServiceUseCase(
             onSuccess = { status -> ProxyServiceResult.Success(proxyRunning = status.running, appState = status.appState) },
             onFailure = { error -> error.toProxyServiceFailure(RootRequestedAction.RestartSameOwner) },
         )
+    }
+
+    /**
+     * Applies a changed profile to the running core.
+     *
+     * VPN reloads it in place through the embedded Clash bridge
+     * (see [AndroidProxyEngine.reloadVpnOrRestart]) and does not touch ROOT.
+     * ROOT goes through [restart], which plans NoOp, Clash-API hot reload, or a supervised
+     * restart. A raw profile also feeds the asteriskd configuration, so that planner still
+     * restarts when the Clash API cannot apply the change safely.
+     */
+    suspend fun applyConfiguration(state: AppState): ProxyServiceResult {
+        if (state.runMode != RunModeVpnService) return restart(state)
+        return runCatching {
+            state.requireUsableMihomoProfile()
+            proxyEngine.reloadVpnOrRestart(ProxyEngineStartRequest(state), requestVpnPermission)
+        }.fold(
+            onSuccess = { status -> ProxyServiceResult.Success(proxyRunning = status.running, appState = status.appState) },
+            onFailure = { error ->
+                if (error is CancellationException) throw error
+                ProxyServiceResult.Failed(error)
+            },
+        )
+    }
+
+    /** The live running state for [state]'s run mode, or `null` when it cannot be read. */
+    suspend fun isRunning(state: AppState): Boolean? = try {
+        proxyEngine.status(state.runMode, state).running
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
+        AndroidAppLogger.warn(LogTag, "Failed to read proxy status", error)
+        null
     }
 
     private suspend fun start(state: AppState, trigger: RootLifecycleTrigger): ProxyServiceResult {

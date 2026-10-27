@@ -165,6 +165,11 @@ internal fun settingsTopLevelSearchItems(
         SettingsSearchItem(SettingsSectionId.Vpn, stringResource(R.string.settings_local_proxy), localProxySummary),
         SettingsSearchItem(
             SettingsSectionId.Vpn,
+            stringResource(R.string.settings_start_on_boot),
+            stringResource(R.string.settings_auto_connect_summary),
+        ),
+        SettingsSearchItem(
+            SettingsSectionId.Vpn,
             stringResource(R.string.settings_traffic_stats_notification),
             stringResource(R.string.settings_traffic_stats_notification_summary),
         ),
@@ -185,7 +190,7 @@ internal fun settingsTopLevelSearchItems(
         SettingsSearchItem(SettingsSectionId.Vpn, stringResource(R.string.settings_tun), tunSummary),
         SettingsSearchItem(
             SettingsSectionId.Tproxy,
-            stringResource(R.string.settings_root_boot_script),
+            stringResource(R.string.settings_start_on_boot),
             stringResource(R.string.settings_root_boot_script_summary),
         ),
         SettingsSearchItem(
@@ -216,7 +221,7 @@ internal fun settingsTopLevelSearchItems(
         SettingsSearchItem(SettingsSectionId.Tproxy, stringResource(if (runMode == app.modes.RunModeTun) R.string.settings_tun_shared_network else R.string.settings_external_interfaces), externalInterfacesSummary),
         SettingsSearchItem(SettingsSectionId.Tproxy, stringResource(R.string.settings_ignored_interfaces), ignoredInterfacesSummary),
         SettingsSearchItem(SettingsSectionId.Tproxy, stringResource(R.string.settings_private_addresses), privateAddressesSummary),
-        SettingsSearchItem(SettingsSectionId.Logs, stringResource(R.string.settings_core_logs)),
+        SettingsSearchItem(SettingsSectionId.Logs, stringResource(R.string.core_logs_title)),
         SettingsSearchItem(SettingsSectionId.Logs, stringResource(R.string.settings_logcat)),
         SettingsSearchItem(
             SettingsSectionId.BackupRestore,
