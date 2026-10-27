@@ -181,7 +181,8 @@ internal data class AsteriskdBpf2SocksHelper(
     val tcpBufferSize: Int = 0,
     val maxTcpSessions: Int = 4096,
     val connectTimeoutMilliseconds: Int = 10000,
-    val tcpIdleTimeoutMilliseconds: Int = 300000,
+    // 0 keeps idle relayed TCP open. asteriskd v2.1.12+ accepts 0 and only rejects the 1..999 range.
+    val tcpIdleTimeoutMilliseconds: Int = 0,
     val udpSocketBufferSize: Int = 524288,
     val udpBatchSize: Int = 32,
     val maxUdpSessions: Int = 4096,

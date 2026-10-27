@@ -32,6 +32,14 @@ abstract class BuildBpf2SocksTask : DefaultTask() {
     @get:InputFile
     abstract val localPropertiesFile: RegularFileProperty
 
+    /**
+     * asteriskd's `shared/` directory. bpf2socks vendors the same headers and calls
+     * `asterisk_udp6_recovery_*`; the build fails if the two copies drift.
+     */
+    @get:Optional
+    @get:InputDirectory
+    abstract val asteriskdSharedDirectory: DirectoryProperty
+
     @get:Input
     abstract val minSdk: Property<Int>
 
@@ -46,14 +54,23 @@ abstract class BuildBpf2SocksTask : DefaultTask() {
     @TaskAction
     fun build() {
         val sourceDir = sourceDirectory.get().asFile
-        val userSpaceSources = sourceDir.listFiles()
-            ?.filter { file ->
+        verifySharedContract(sourceDir)
+        // The root and its module directories; kern/*.bpf.c is compiled separately.
+        val userSpaceSources = sourceDir.walkTopDown()
+            .onEnter { directory ->
+                directory == sourceDir || (
+                    !directory.name.startsWith(".") &&
+                        directory.name != "build" &&
+                        directory.name != "tests"
+                    )
+            }
+            .filter { file ->
                 file.isFile &&
                     file.extension == "c" &&
                     !file.name.endsWith(".bpf.c")
             }
-            ?.sortedBy { file -> file.name }
-            .orEmpty()
+            .sortedBy { file -> file.relativeTo(sourceDir).invariantSeparatorsPath }
+            .toList()
         if (userSpaceSources.isEmpty()) {
             throw GradleException("No bpf2socks C sources found under ${sourceDir.absolutePath}")
         }
@@ -77,6 +94,7 @@ abstract class BuildBpf2SocksTask : DefaultTask() {
                         "-Werror",
                         "-fPIE",
                         "-pie",
+                        "-I${sourceDir.absolutePath}",
                     ) + sources.map(File::getAbsolutePath) + listOf(
                         "-o",
                         output.absolutePath,
@@ -89,8 +107,27 @@ abstract class BuildBpf2SocksTask : DefaultTask() {
         }
     }
 
+    private fun verifySharedContract(sourceDir: File) {
+        val asteriskdShared = asteriskdSharedDirectory.orNull?.asFile ?: return
+        SharedContractHeaders.forEach { name ->
+            val vendored = sourceDir.resolve("shared").resolve(name)
+            val supervisor = asteriskdShared.resolve(name)
+            if (!vendored.isFile || !supervisor.isFile) {
+                throw GradleException(
+                    "bpf2socks shared contract is missing: ${vendored.absolutePath} or ${supervisor.absolutePath}",
+                )
+            }
+            if (!vendored.readBytes().contentEquals(supervisor.readBytes())) {
+                throw GradleException(
+                    "bpf2socks shared/$name does not match asteriskd shared/$name. " +
+                        "bpf2socks 1.2.x must compile the same asterisk_udp6_recovery_* header as asteriskd.",
+                )
+            }
+        }
+    }
+
     private fun buildEmbeddedBpfSource(ndkDir: File, sourceDir: File): File {
-        val bpfSource = sourceDir.resolve("tc_redirect.bpf.c")
+        val bpfSource = sourceDir.resolve("kern/tc_redirect.bpf.c")
         if (!bpfSource.isFile) {
             throw GradleException("Missing bpf2socks TC source: ${bpfSource.absolutePath}")
         }
@@ -202,6 +239,11 @@ private enum class Bpf2SocksAbiTarget(
     X86("x86", "i686-linux-android"),
     X64("x86_64", "x86_64-linux-android"),
 }
+
+private val SharedContractHeaders = listOf(
+    "udp6_recovery_netlink.h",
+    "bpf_cgroup_owned.h",
+)
 
 private fun String.toBpf2SocksAbiTarget(): Bpf2SocksAbiTarget {
     return Bpf2SocksAbiTarget.entries.firstOrNull { target -> target.androidAbi == this }

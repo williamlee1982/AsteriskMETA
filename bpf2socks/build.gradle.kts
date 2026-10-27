@@ -48,6 +48,7 @@ val syncBpf2SocksVersion = tasks.register<SyncGitSubmoduleVersionTask>("syncBpf2
 val buildBpf2Socks = tasks.register<BuildBpf2SocksTask>("buildBpf2Socks") {
     dependsOn(syncBpf2SocksVersion)
     sourceDirectory.set(bpf2SocksSubmoduleDir)
+    asteriskdSharedDirectory.set(rootProject.layout.projectDirectory.dir("asteriskd/src/main/native/shared"))
     outputDirectory.set(generatedJniLibsDir)
     rootProject.layout.projectDirectory.file("local.properties")
         .takeIf { it.asFile.exists() }
