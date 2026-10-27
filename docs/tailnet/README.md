@@ -21,7 +21,7 @@ rules:
 ```
 
 Facts established from the sources (AsteriskMETA `main`, AndroidLibClashLite `main` + the
-Tailscale state API and inbound forwards (`v1.19.32-android.5-tailscale.6`), Mihomo stable `v1.19.32`, tailscale v1.104.1):
+Tailscale state API and inbound forwards (`v1.19.33-android.1-tailscale.1`), Mihomo stable `v1.19.33`, tailscale v1.104.1):
 
 | Area | Behavior | Where |
 | --- | --- | --- |
@@ -81,7 +81,7 @@ API (both the JNI export and the authenticated Clash controller group):
 
 | Route / JNI | Result |
 | --- | --- |
-| `GET /asterisk/tailscale` / `queryTailscaleStatus()` | `{"outbounds":[{name,state,loginUrlAvailable,tailnetIps,peerIps,hostname,dnsName,magicDnsSuffix,health,error}]}`; never starts tsnet, never carries a URL. From `tailscale.6` the core calls `Status` and a queried netmap includes `peerIps` (other nodes' tailnet addresses, or `[]`). Older cores call `StatusWithoutPeers` and omit the field. |
+| `GET /asterisk/tailscale` / `queryTailscaleStatus()` | `{"outbounds":[{name,state,loginUrlAvailable,tailnetIps,peerIps,hostname,dnsName,magicDnsSuffix,health,error}]}`; never starts tsnet, never carries a URL. The pinned `v1.19.33-android.1-tailscale.1` core calls `Status` and a queried netmap includes `peerIps` (other nodes' tailnet addresses, or `[]`). Older cores call `StatusWithoutPeers` and omit the field. |
 | `POST /asterisk/tailscale/login?name=` / `startTailscaleLogin` | 202; starts tsnet if needed and requests an interactive login |
 | `GET /asterisk/tailscale/login-url?name=` / `queryTailscaleLoginURL` | The pending URL, on demand, `Cache-Control: no-store`; HTTP returns 403 unless the controller has a secret |
 | `POST /asterisk/tailscale/logout?name=` / `logoutTailscale` | 204; deauthorizes the node |
@@ -187,7 +187,7 @@ this workspace, so no sibling implementation was changed.
 Inbound forwarding is an opt-in, TCP-only way for another device on the Tailnet to reach a
 service listening on the phone. It requires an inbound-capable core (`v1.19.32-android.5-tailscale.4`
 or newer; the private-LAN target rule, state-dir conflict check and Accept backoff need
-`tailscale.5`), which the app pins (`tailscale.6`, AAR SHA-256 `a2c9c496…0fa06e5b`, checked by
+`tailscale.5`), which the app pins (`v1.19.33-android.1-tailscale.1`, AAR SHA-256 `7066f2f7…737a3373`, checked by
 `:app:verifyLibclashAar`).
 
 Declare forwards on a **top-level** `type: tailscale` outbound. The app does not invent targets or
@@ -269,7 +269,7 @@ The home Tailnet card has **Route tailnet peers** (default on). While it is on a
 * IPv4 hosts are stored as `/32` and IPv6 hosts as `/128`, and only when they fall in `100.64.0.0/10` or `fd7a:115c:a1e0::/48`. Wider prefixes and this device's own addresses are ignored.
 * Addresses the user added are kept, including when the same host is also a peer and later leaves the tailnet. Textual duplicates (`fd7a:115c:a1e0::1` and `fd7a:115c:a1e0:0:0:0:0:1`) are not added twice.
 * A device that disappears from the netmap loses the entry the app added. A device that is only offline stays, so a sleeping peer is still routed into the core.
-* The pinned `v1.19.32-android.5-tailscale.6` core calls `Status`, not `StatusWithoutPeers`, and returns `peerIps` once it has read the netmap: canonical tailnet addresses of other devices, or `[]` when there are none. The field is omitted only when peers were not queried. Omission, a failed query, or a node that is not Running leaves the list unchanged, and the card says so if a Running node omits the field. On this core a Running node includes `peerIps`, so the switch updates Private addresses. An older core that still omits the field leaves the switch with nothing to merge.
+* The pinned `v1.19.33-android.1-tailscale.1` core calls `Status`, not `StatusWithoutPeers`, and returns `peerIps` once it has read the netmap: canonical tailnet addresses of other devices, or `[]` when there are none. The field is omitted only when peers were not queried. Omission, a failed query, or a node that is not Running leaves the list unchanged, and the card says so if a Running node omits the field. On this core a Running node includes `peerIps`, so the switch updates Private addresses. An older core that still omits the field leaves the switch with nothing to merge.
 * Turning the switch off removes only the entries the app added.
 * Sync runs for the life of the app process, on the same poll interval as the Tailnet card, and also when the switch, run mode, IPv6 setting or private-address list changes. Logs record counts only.
 * TPROXY, TUN2SOCKS and BPF2SOCKS restart the proxy when the routing-relevant list changes, because asteriskd installs those CIDRs at start and the Clash API cannot update them. IPv6 hosts do not restart the proxy while IPv6 is disabled. VPN and ROOT TUN persist the list and do not restart.
@@ -291,4 +291,4 @@ The home Tailnet card has **Route tailnet peers** (default on). While it is on a
 
 * Inbound forwarding currently supports TCP listeners to IP-literal targets only. UDP, TLS
   termination, and the in-app forward editor remain out of scope for this phase.
-* A device list and exit-node controls still wait on a typed interface. Peer addresses for **Private addresses** are `peerIps` from the pinned `v1.19.32-android.5-tailscale.6` core, which reads them with `Status`.
+* A device list and exit-node controls still wait on a typed interface. Peer addresses for **Private addresses** are `peerIps` from the pinned `v1.19.33-android.1-tailscale.1` core, which reads them with `Status`.
