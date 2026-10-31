@@ -34,7 +34,11 @@ internal object AsteriskdConfigValidator {
             }
             AsteriskdMode.Bpf2Socks -> {
                 require(modeOptions.transparentPort == null && modeOptions.tunnelName == null)
-                require(helper is AsteriskdBpf2SocksHelper && matcher == null)
+                require(
+                    helper is AsteriskdBpf2SocksHelper &&
+                        matcher == null &&
+                        helper.udpIdleTimeoutMilliseconds in 1000..86_400_000,
+                )
             }
             AsteriskdMode.Tun -> {
                 require(modeOptions.transparentPort == null && !modeOptions.tunnelName.isNullOrBlank())
@@ -49,7 +53,7 @@ internal object AsteriskdConfigValidator {
             require(!network.enableLocalDns && !network.enableFakeDns && network.fakeDnsIpv4Pool == null)
             require(network.ignoredInterfaces.isEmpty())
             require(network.virtualInterfaces.isEmpty())
-            if (mode == AsteriskdMode.Ebpf) require(network.hotspotInterfacePrefixes.isEmpty())
+            if (mode == AsteriskdMode.Ebpf) require(network.hotspotInterfaces.isEmpty())
             require(network.proxyPrivateCidrs.isEmpty() && network.bypassPrivateCidrs.isEmpty())
             require(network.appPolicy == AsteriskdAppPolicy(
                 mode = AsteriskdAppPolicyMode.Global,
