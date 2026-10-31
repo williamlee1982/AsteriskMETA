@@ -18,7 +18,7 @@ class AsteriskdNetworkOptionsEncodingTest {
         fakeDnsIpv4Pool = null,
         ignoredInterfaces = emptyList(),
         virtualInterfaces = emptyList(),
-        hotspotInterfacePrefixes = emptyList(),
+        hotspotInterfaces = emptyList(),
         proxyPrivateCidrs = emptyList(),
         bypassPrivateCidrs = emptyList(),
         appPolicy = AsteriskdAppPolicy(AsteriskdAppPolicyMode.Global, emptyList(), emptyList(), null, null),
@@ -29,6 +29,8 @@ class AsteriskdNetworkOptionsEncodingTest {
     @Test
     fun defaultsAreOmitted() {
         val json = network().toJsonObject()
+        assertTrue(json.containsKey("hotspotInterfaces"))
+        assertFalse(json.containsKey("hotspotInterfacePrefixes"))
         assertFalse(json.containsKey("captureBoundNetworks"))
         assertFalse(json.containsKey("blockEncryptedDns"))
     }
@@ -50,10 +52,16 @@ class AsteriskdNetworkOptionsEncodingTest {
             socksPort = 7890,
         )
         assertEquals(0, helper.tcpIdleTimeoutMilliseconds)
+        assertEquals(60000, helper.udpIdleTimeoutMilliseconds)
         val encoded = AsteriskdConfigEncoder.encode(bpf2SocksConfig(helper))
+        assertTrue(encoded.contains("\"schemaVersion\": 6"))
+        assertTrue(encoded.contains("\"hotspotInterfaces\""))
+        assertFalse(encoded.contains("hotspotInterfacePrefixes"))
         assertTrue(encoded.contains("\"tcpIdleTimeoutMilliseconds\": 0"))
         assertFalse(encoded.contains("\"tcpIdleTimeoutMilliseconds\": 1000"))
         assertFalse(encoded.contains("\"tcpIdleTimeoutMilliseconds\": 300000"))
+        assertTrue(encoded.contains("\"udpIdleTimeoutMilliseconds\": 60000"))
+        assertFalse(encoded.contains("udpIdleTimeoutSeconds"))
     }
 
     private fun bpf2SocksConfig(helper: AsteriskdBpf2SocksHelper) = AsteriskdConfig(
