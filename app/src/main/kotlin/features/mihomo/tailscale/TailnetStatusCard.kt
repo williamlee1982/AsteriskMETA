@@ -46,6 +46,9 @@ internal fun TailnetStatusCard(
     onInboundForwardsEnabledChange: (Boolean) -> Unit = {},
     privateAddressSyncEnabled: Boolean = true,
     onPrivateAddressSyncEnabledChange: (Boolean) -> Unit = {},
+    shortNamesEnabled: Boolean = true,
+    onShortNamesEnabledChange: (Boolean) -> Unit = {},
+    shortNamesBusy: Boolean = false,
 ) {
     AsteriskPageCard(modifier = modifier) {
         Column(
@@ -90,6 +93,26 @@ internal fun TailnetStatusCard(
                     actionsEnabled = busyOutbound == null,
                     onLogIn = { onLogIn(outbound) },
                     onLogOut = { onLogOut(outbound) },
+                )
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.tailnet_short_names_toggle),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    Text(
+                        text = stringResource(R.string.tailnet_short_names_summary),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Switch(
+                    checked = shortNamesEnabled,
+                    enabled = !shortNamesBusy,
+                    onCheckedChange = onShortNamesEnabledChange,
                 )
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

@@ -128,6 +128,7 @@ internal fun TailnetStatusSection(
 
     val messages = TailnetMessages.resolve()
     val restartFailedMessage = stringResource(R.string.tailnet_inbound_forwards_restart_failed)
+    val shortNamesRestartFailedMessage = stringResource(R.string.tailnet_short_names_restart_failed)
     var toggleBusy by remember { mutableStateOf(false) }
     val toggle = tailnetInboundTogglePresentation(
         enabled = appState.tailnetInboundForwardsEnabled,
@@ -164,6 +165,27 @@ internal fun TailnetStatusSection(
         privateAddressSyncEnabled = appState.tailnetPrivateAddressSyncEnabled,
         onPrivateAddressSyncEnabledChange = { enabled ->
             updateAppState { state -> state.copy(tailnetPrivateAddressSyncEnabled = enabled) }
+        },
+        shortNamesEnabled = appState.tailnetShortNamesEnabled,
+        shortNamesBusy = toggleBusy,
+        onShortNamesEnabledChange = { enabled ->
+            if (toggleBusy) return@TailnetStatusCard
+            toggleBusy = true
+            val current = latestAppState
+            scope.launch {
+                try {
+                    applyTailnetShortNamesToggle(
+                        current = current,
+                        enabled = enabled,
+                        update = updateAppState,
+                        restart = { state -> services.appScope.async { services.proxyServiceUseCase.restart(state) }.await() },
+                        onFailure = { error -> services.tipNotifier.showError(error, shortNamesRestartFailedMessage) },
+                    )
+                } finally {
+                    toggleBusy = false
+                    statusState.refresh()
+                }
+            }
         },
         busyOutbound = busyOutbound,
         onLogIn = { outbound ->

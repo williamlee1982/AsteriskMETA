@@ -122,6 +122,10 @@ internal class AppSettingsPreferences(
                 KeyTailnetPrivateAddressSyncEnabled,
                 defaults.tailnetPrivateAddressSyncEnabled,
             ),
+            tailnetShortNamesEnabled = preferences.getBoolean(
+                KeyTailnetShortNamesEnabled,
+                defaults.tailnetShortNamesEnabled,
+            ),
             localProxyPort = preferences.getString(KeyLocalProxyPort, defaults.localProxyPort) ?: defaults.localProxyPort,
             enableDynamicLocalProxyPort = preferences.getBoolean(
                 KeyEnableDynamicLocalProxyPort,
@@ -367,6 +371,7 @@ internal class AppSettingsPreferences(
             .putBoolean(KeyEnableLocalDns, state.enableLocalDns)
             .putBoolean(KeyTailnetInboundForwardsEnabled, state.tailnetInboundForwardsEnabled)
             .putBoolean(KeyTailnetPrivateAddressSyncEnabled, state.tailnetPrivateAddressSyncEnabled)
+            .putBoolean(KeyTailnetShortNamesEnabled, state.tailnetShortNamesEnabled)
             .putString(KeyLocalProxyPort, state.localProxyPort)
             .putBoolean(KeyEnableDynamicLocalProxyPort, state.enableDynamicLocalProxyPort)
             .putBoolean(KeyLocalProxyListenAllInterfaces, state.localProxyListenAllInterfaces)
@@ -606,6 +611,7 @@ private const val KeyMihomoControlSecret = "mihomo_control_secret"
 private const val KeyEnableLocalDns = "enable_local_dns"
 private const val KeyTailnetInboundForwardsEnabled = "tailnet_inbound_forwards_enabled"
 private const val KeyTailnetPrivateAddressSyncEnabled = "tailnet_private_address_sync_enabled"
+private const val KeyTailnetShortNamesEnabled = "tailnet_short_names_enabled"
 private const val KeyLocalProxyPort = "local_proxy_port"
 private const val KeyEnableDynamicLocalProxyPort = "enable_dynamic_local_proxy_port"
 private const val KeyLocalProxyListenAllInterfaces = "local_proxy_listen_all_interfaces"

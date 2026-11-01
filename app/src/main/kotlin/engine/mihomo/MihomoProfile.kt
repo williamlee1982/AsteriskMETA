@@ -282,7 +282,7 @@ private fun MutableMap<String, Any?>.putAsteriskRuntimeOverrides(
     putDnsOverrides(appState, forceDns)
     putDnsHijackOverrides(appState, runMode)
     putNtpWriteToSystemOverride()
-    putTailnetDnsOverrides()
+    putTailnetDnsOverrides(shortNames = appState.tailnetShortNamesEnabled)
     putTailnetInboundOverrides(exposePorts = exposePorts, enabled = appState.tailnetInboundForwardsEnabled)
 }
 
@@ -527,27 +527,6 @@ private fun List<String>.appendSystemDnsIfNeeded(enabled: Boolean): List<String>
     return this + SystemDnsServer
 }
 
-private fun List<String>.toMihomoNameserverPolicy(): Map<String, Any?> {
-    val policy = linkedMapOf<String, Any?>()
-    forEach { entry ->
-        val separatorIndex = entry.indexOf(NameserverPolicySeparator)
-        if (separatorIndex <= 0 || separatorIndex >= entry.length - NameserverPolicySeparator.length) {
-            return@forEach
-        }
-        val rule = entry.substring(0, separatorIndex).trim()
-        val servers = entry.substring(separatorIndex + NameserverPolicySeparator.length)
-            .split(",")
-            .map(String::trim)
-            .filter(String::isNotEmpty)
-            .distinct()
-        if (rule.isBlank() || servers.isEmpty()) {
-            return@forEach
-        }
-        policy[rule] = if (servers.size == 1) servers.first() else servers
-    }
-    return policy
-}
-
 private fun mergedMihomoHosts(
     existingHosts: Any?,
     appStateHosts: List<String>,
@@ -657,7 +636,6 @@ private val AsteriskManagedTopLevelKeys = setOf(
     MihomoAutoSwitchConfigKey,
 )
 
-private const val NameserverPolicySeparator = "=>"
 private const val SystemDnsServer = "system://"
 internal const val MihomoProfileMissingErrorMessage = "No Mihomo configuration selected"
 internal const val MihomoProfileEmptyErrorMessage = "Selected Mihomo configuration has no YAML content"
@@ -685,10 +663,30 @@ private class SingleQuotedStringRepresenter(
 
     override fun representMappingEntry(entry: Map.Entry<*, *>): NodeTuple {
         val keyNode = if (entry.key is String) {
-            ScalarNode(Tag.STR, entry.key.toString(), ScalarStyle.PLAIN)
+            val key = entry.key.toString()
+            // Plain `*` is a YAML alias. Mihomo then fails the whole config, and a nameserver-policy
+            // key of `*` (one-label wildcard) never reaches the domain trie.
+            val style = if (key.requiresQuotedYamlKey()) ScalarStyle.SINGLE_QUOTED else ScalarStyle.PLAIN
+            ScalarNode(Tag.STR, key, style)
         } else {
             representData(entry.key)
         }
         return NodeTuple(keyNode, representData(entry.value))
+    }
+}
+
+/** True when a plain YAML key would be read as an alias, a nested collection, or an ambiguous scalar. */
+private fun String.requiresQuotedYamlKey(): Boolean {
+    if (isEmpty()) return true
+    val first = this[0]
+    if (!first.isLetterOrDigit() && first != '+' && first != '_' && first != '.') return true
+    return any { character ->
+        character.isISOControl() ||
+            character == ':' ||
+            character == '#' ||
+            character == ' ' ||
+            character == '\'' ||
+            character == '"' ||
+            character == ','
     }
 }

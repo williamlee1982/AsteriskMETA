@@ -1264,6 +1264,7 @@ private fun AppState.mihomoRuntimeConfigKey(backend: MihomoRuntimeBackend): Int 
             selectedMihomoProfileOrNull()?.contentSha256,
             selectedMihomoProfileOrNull()?.disableOverrides,
             tailnetInboundForwardsEnabled,
+            tailnetShortNamesEnabled,
             proxyRunning,
             mihomoMode,
         )
@@ -1286,6 +1287,7 @@ private fun AppState.mihomoRuntimeConfigKey(backend: MihomoRuntimeBackend): Int 
             enableSnifferOverrideDestination,
             enableLocalDns,
             tailnetInboundForwardsEnabled,
+            tailnetShortNamesEnabled,
             enableIpv6,
             overrideDns,
             dnsPreferH3,

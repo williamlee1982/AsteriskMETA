@@ -72,6 +72,11 @@ data class AppState(
      * so a Tailscale outbound never sees that traffic. Turn it off to edit the list by hand.
      */
     val tailnetPrivateAddressSyncEnabled: Boolean = true,
+    /**
+     * Sends dotless hostnames such as `wbvm` to the profile's Tailscale DNS (`nameserver-policy` `*`)
+     * and routes those names plus the Tailnet ranges through that proxy. Off keeps only `+.ts.net`.
+     */
+    val tailnetShortNamesEnabled: Boolean = true,
 
     val localProxyPort: String = VpnDefaults.LOCAL_PROXY_PORT.toString(),
     val enableDynamicLocalProxyPort: Boolean = false,

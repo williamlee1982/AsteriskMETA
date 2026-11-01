@@ -132,7 +132,14 @@ core and, by default whenever the profile declares a tailscale outbound:
   through the tailnet in every run mode (VPN, ROOT TPROXY/TUN/TUN2SOCKS/BPF2SOCKS, fake-ip and
   redir-host);
 * adds `DOMAIN-SUFFIX,<suffix>,<outbound>` after the app's DNS-hijack rules so connections to those
-  names go through the tailnet.
+  names go through the tailnet;
+* when **Resolve short hostnames** is on (the default; home Tailnet card), also adds
+  `nameserver-policy` `*: tailscale://<outbound>`. Mihomo 1.19.33's domain trie treats a bare `*`
+  as a one-label wildcard, so `wbvm` is resolved by the tailnet resolver and `wbvm.tail.ts.net`
+  still uses the suffix entry. `localhost` is pinned to `system`. With `rules: true` the app also
+  prepends `DOMAIN,localhost,DIRECT`, `DOMAIN-REGEX` for one DNS label, and
+  `IP-CIDR,100.64.0.0/10` / `IP-CIDR6,fd7a:115c:a1e0::/48` (`no-resolve`) toward the outbound,
+  unless the profile already has that rule.
 
 ```yaml
 asterisk-tailnet-dns:
@@ -142,11 +149,15 @@ asterisk-tailnet-dns:
 # asterisk-tailnet-dns: false        # disable
 ```
 
-User `nameserver-policy` entries or `DOMAIN-SUFFIX` rules for the same suffix win. In ROOT
-TPROXY/TUN2SOCKS/BPF2SOCKS with redir-host DNS, a resolved Tailnet IP is still bypassed unless it is
-listed under **Private addresses** (`/32`); fake-ip mode does not need that. Raw configurations
-(overrides disabled) are passed through unchanged. Bare short names (MagicDNS search domains) are
-not handled.
+User `nameserver-policy` entries (including `*`) or `DOMAIN-SUFFIX` / `IP-CIDR` rules for the same
+suffix or range win. Turning **Resolve short hostnames** off keeps the suffix behavior and does not
+add `*`, the one-label rule, or the Tailnet CIDR rules. In ROOT TPROXY/TUN2SOCKS/BPF2SOCKS with
+redir-host DNS, a resolved Tailnet IP is still bypassed unless it is listed under **Private
+addresses** (`/32`). **Route tailnet peers** (default on) adds those host routes from the netmap;
+the app does not install `100.64.0.0/10` as a private address, because that would also capture
+carrier CGNAT. Fake-ip mode matches the one-label domain rule and does not need that list. Raw
+configurations (overrides disabled) are passed through unchanged. Other dotless names that are not
+Tailnet peers are also sent to the tailnet resolver while the switch is on.
 
 ### Effective outbounds (`-tailscale.3`)
 
@@ -278,8 +289,8 @@ The home Tailnet card has **Route tailnet peers** (default on). While it is on a
 
 * The DNS defaults below (`asterisk-tailnet-dns`) are computed from the profile file, so a
   tailscale outbound that only a proxy provider adds gets no default
-  MagicDNS policy (`asterisk-tailnet-dns.outbound` must name a top-level outbound); add the
-  `nameserver-policy` entry and `DOMAIN-SUFFIX` rule in the profile or the override instead.
+  MagicDNS or short-name policy (`asterisk-tailnet-dns.outbound` must name a top-level outbound); add the
+  `nameserver-policy` entry and routing rule in the profile or the override instead.
 * ROOT-created state is root-owned; switching the same identity to VPN mode may fail to read it.
   This needs on-device verification and an explicit ownership plan; do not chmod state dirs.
 * Opening the login page through the HTTP controller requires a controller secret, so another app
