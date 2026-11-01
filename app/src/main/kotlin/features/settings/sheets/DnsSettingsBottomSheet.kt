@@ -21,6 +21,8 @@ import ui.icons.AsteriskIcons as Icons
 import engine.mihomo.DefaultMihomoDnsFakeIpRange
 import engine.mihomo.MihomoDnsModeFakeIp
 import engine.mihomo.MihomoDnsModeValues
+import engine.mihomo.isMihomoDnsServer
+import engine.mihomo.isMihomoNameserverPolicyKey
 import engine.network.isCidrAddress
 import engine.network.isValidFakeIpIpv4Pool
 import engine.network.isIpAddress
@@ -33,28 +35,6 @@ import utils.toTrimmedNonEmptyDistinctList
 
 private const val DnsHostSeparator = ':'
 private const val NameserverPolicySeparator = "=>"
-private const val SystemDnsServer = "system://"
-private const val SystemDnsKeyword = "system"
-
-private val MihomoDnsUrlSchemes = setOf(
-    "https",
-    "h2c",
-    "h3",
-    "https+local",
-    "h2c+local",
-    "h3+local",
-    "quic",
-    "quic+local",
-    "tls",
-    "tls+local",
-    "tcp",
-    "tcp+local",
-    "udp",
-    "udp+local",
-    "dhcp",
-    "system",
-    "rcode",
-)
 
 @Composable
 internal fun DnsSettingsBottomSheet(
@@ -382,55 +362,6 @@ internal fun dnsServerInputError(input: String, invalidMessage: String): String?
     return if (isMihomoDnsServer(trimmed)) null else invalidMessage
 }
 
-private fun isMihomoDnsServer(value: String): Boolean {
-    // Mihomo accepts the bare `system` keyword as the system resolver.
-    if (value.equals("localhost", ignoreCase = true) || value.equals(SystemDnsKeyword, ignoreCase = true)) {
-        return true
-    }
-
-    val schemeEnd = value.indexOf("://")
-    if (schemeEnd >= 0) {
-        val scheme = value.substring(0, schemeEnd).lowercase()
-        if (scheme !in MihomoDnsUrlSchemes) return false
-        if (scheme == "system") return value == SystemDnsServer
-        val authority = value.substring(schemeEnd + 3)
-            .substringBefore('/')
-            .substringBefore('?')
-            .substringBefore('#')
-            .substringAfterLast('@')
-        if (scheme == "rcode") return authority.isNotBlank()
-        if (scheme == "dhcp") return authority.isNotBlank()
-        return isMihomoDnsAuthority(authority)
-    }
-
-    return isIpAddress(value) || (!value.contains(":") && isDnsHostDomain(value))
-}
-
-private fun isMihomoDnsAuthority(authority: String): Boolean {
-    val trimmed = authority.trim()
-    if (trimmed.isBlank()) return false
-
-    if (trimmed.startsWith("[")) {
-        val closeBracketIndex = trimmed.indexOf(']')
-        if (closeBracketIndex <= 1) return false
-        val host = trimmed.substring(1, closeBracketIndex)
-        val rest = trimmed.substring(closeBracketIndex + 1)
-        return isIpAddress(host) && (rest.isEmpty() || rest.startsWith(":") && isPort(rest.drop(1)))
-    }
-
-    val colonCount = trimmed.count { it == ':' }
-    if (colonCount == 0) {
-        return isIpAddress(trimmed) || isDnsHostDomain(trimmed)
-    }
-    if (colonCount == 1) {
-        val host = trimmed.substringBefore(':')
-        val port = trimmed.substringAfter(':')
-        return (isIpAddress(host) || isDnsHostDomain(host)) && isPort(port)
-    }
-
-    return isIpAddress(trimmed)
-}
-
 internal fun dnsDomainInputError(input: String, invalidMessage: String): String? {
     val trimmed = input.trim()
     if (trimmed.isEmpty() || trimmed.any(Char::isWhitespace)) return invalidMessage
@@ -462,7 +393,7 @@ internal fun nameserverPolicyInputError(
         .split(",")
         .map(String::trim)
         .filter(String::isNotEmpty)
-    if (dnsDomainInputError(rule, invalidMessage) != null || servers.isEmpty()) return invalidMessage
+    if (!isMihomoNameserverPolicyKey(rule) || servers.isEmpty()) return invalidMessage
     return servers.firstNotNullOfOrNull { server -> dnsServerInputError(server, invalidServerMessage) }
 }
 

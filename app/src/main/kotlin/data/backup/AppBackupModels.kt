@@ -55,6 +55,7 @@ internal data class AppBackupSettings(
     val mihomoControlSecret: String = BackupDefaults.mihomoControlSecret,
     val enableLocalDns: Boolean = BackupDefaults.enableLocalDns,
     val tailnetPrivateAddressSyncEnabled: Boolean = BackupDefaults.tailnetPrivateAddressSyncEnabled,
+    val tailnetShortNamesEnabled: Boolean = BackupDefaults.tailnetShortNamesEnabled,
     val localProxyPort: String = BackupDefaults.localProxyPort,
     val enableDynamicLocalProxyPort: Boolean = BackupDefaults.enableDynamicLocalProxyPort,
     val localProxyListenAllInterfaces: Boolean = BackupDefaults.localProxyListenAllInterfaces,
