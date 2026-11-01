@@ -314,18 +314,25 @@ jobs:
           current_sha="$(git rev-parse HEAD)"
           git fetch --tags --force
 
+          skip_release=false
           if git rev-parse -q --verify "refs/tags/$TAG_NAME" >/dev/null; then
             tag_sha="$(git rev-list -n 1 "$TAG_NAME")"
             if [ "$tag_sha" != "$current_sha" ]; then
-              echo "::error::Tag $TAG_NAME already exists at $tag_sha, but this workflow is running at $current_sha."
-              exit 1
+              echo "::warning::Tag $TAG_NAME already exists at $tag_sha, but this workflow is running at $current_sha. Skipping tag and GitHub Release."
+              skip_release=true
+            else
+              echo "Tag $TAG_NAME already exists on the current commit."
             fi
-            echo "Tag $TAG_NAME already exists on the current commit."
           else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git tag -a "$TAG_NAME" -m "Release $TAG_NAME" "$current_sha"
             git push origin "refs/tags/$TAG_NAME"
+          fi
+
+          echo "skip_release=$skip_release" >> "$GITHUB_OUTPUT"
+          if [ "$skip_release" = "true" ]; then
+            exit 0
           fi
 
           mapfile -t release_tags < <(
@@ -393,7 +400,7 @@ jobs:
           cat release-notes.md
 
       - name: Create GitHub Release
-        if: steps.version.outputs.create_github_release == 'true'
+        if: steps.version.outputs.create_github_release == 'true' && steps.release_info.outputs.skip_release != 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
