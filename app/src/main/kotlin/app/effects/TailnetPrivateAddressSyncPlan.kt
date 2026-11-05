@@ -22,6 +22,8 @@ internal data class TailnetPrivateAddressRuntime(
     val appliedRunMode: Int? = null,
     val appliedCidrs: List<String>? = null,
     val retryNotBeforeMillis: Long = 0L,
+    /** When the proxy was first observed running, so peer churn during startup can be merged. */
+    val runningSinceMillis: Long? = null,
 )
 
 internal data class TailnetPrivateAddressPlan(
@@ -35,6 +37,13 @@ internal data class TailnetPrivateAddressPlan(
 )
 
 internal const val TailnetPrivateAddressRestartRetryMillis = 60_000L
+
+/**
+ * Peer churn right after the core starts is expected while Tailscale connects. Persist those
+ * changes immediately but let the window close before restarting, so a cold start does not
+ * launch the core and then restart it seconds later.
+ */
+internal const val TailnetPrivateAddressStartupMergeWindowMillis = 45_000L
 
 /**
  * Decides the next private-address list and whether the running proxy must be restarted.
@@ -55,12 +64,14 @@ internal fun planTailnetPrivateAddressSync(
                 appliedRunMode = state.runMode,
                 appliedCidrs = state.privateAddressCidrs,
                 retryNotBeforeMillis = 0L,
+                runningSinceMillis = nowMillis,
             )
         !state.proxyRunning -> runtime.copy(
             proxyWasRunning = false,
             appliedRunMode = null,
             appliedCidrs = null,
             retryNotBeforeMillis = 0L,
+            runningSinceMillis = null,
         )
         else -> runtime
     }
@@ -75,7 +86,11 @@ internal fun planTailnetPrivateAddressSync(
     val changed = merged.privateAddressCidrs != state.privateAddressCidrs ||
         merged.managedCidrs != state.tailnetManagedPrivateAddressCidrs
     val routingActive = state.proxyRunning && state.runMode.usesPrivateAddressRouting()
+    val startupMergeWindowOpen = anchored.runningSinceMillis?.let { runningSince ->
+        nowMillis - runningSince < TailnetPrivateAddressStartupMergeWindowMillis
+    } == true
     val restartNeeded = routingActive &&
+        !startupMergeWindowOpen &&
         merged.privateAddressCidrs.routingProjection(state.enableIpv6) !=
         anchored.appliedCidrs?.routingProjection(state.enableIpv6)
     val action = when {

@@ -356,6 +356,7 @@ internal fun AppState.toSubscriptionFetchOptions(profile: MihomoProfileState): A
     val rawProfile = selectedMihomoProfileOrNull()?.takeIf { it.disableOverrides }
     return AndroidSubscriptionFetchOptions(
         useRunningProxy = profile.updateViaProxy,
+        proxyRunning = proxyRunning,
         fallbackProxy = if (rawProfile == null) toLocalProxyOptions() else null,
         fallbackRawConfigPath = rawProfile?.contentPath,
     )

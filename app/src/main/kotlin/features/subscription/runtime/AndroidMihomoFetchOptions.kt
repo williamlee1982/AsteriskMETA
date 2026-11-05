@@ -19,9 +19,20 @@ import kotlinx.coroutines.withContext
 
 internal data class AndroidSubscriptionFetchOptions(
     val useRunningProxy: Boolean = false,
+    val proxyRunning: Boolean = false,
     val fallbackProxy: LocalProxyOptions? = null,
     val fallbackRawConfigPath: String? = null,
 )
+
+/**
+ * A fetch that is configured to go through the running proxy must not hold the subscription
+ * deadline open while that proxy is still starting. It gets a short deadline instead; the next
+ * scheduled or user-initiated refresh runs normally once the core is up.
+ */
+internal fun AndroidSubscriptionFetchOptions.fetchTimeoutMillis(): Long? =
+    ProxyNotRunningFetchTimeoutMillis.takeIf { useRunningProxy && !proxyRunning }
+
+internal const val ProxyNotRunningFetchTimeoutMillis = 10_000L
 
 internal suspend fun AndroidSubscriptionFetchOptions.toCoreFetchProxy(): FetchProxy? {
     if (!useRunningProxy) return null

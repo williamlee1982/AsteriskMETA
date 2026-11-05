@@ -18,6 +18,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import utils.decodeContentDispositionFilename
 
 internal sealed interface AndroidMihomoProfilePreparation {
@@ -66,12 +67,14 @@ internal class AndroidMihomoProfilePreparer(
         var remoteName: String? = null
         try {
             withContext(Dispatchers.IO) {
-                prepareProcessingProfileDir(
-                    processingDir = processingDir,
-                    dataDir = dataDir,
-                    profileContent = profileContent,
-                    refreshProxyProviders = false,
-                )
+                mihomoCorePublicationLock.withLock {
+                    prepareProcessingProfileDir(
+                        processingDir = processingDir,
+                        dataDir = dataDir,
+                        profileContent = profileContent,
+                        refreshProxyProviders = false,
+                    )
+                }
             }
             val statuses = Channel<FetchStatus>(Channel.UNLIMITED)
             try {
@@ -88,25 +91,34 @@ internal class AndroidMihomoProfilePreparer(
                         }
                     }
                     try {
-                        withMihomoAgeSecretKey(ageSecretKey) {
-                            Clash.fetchAndValid(
-                                path = processingDir,
-                                url = sourceUrl,
-                                options = FetchOptions(
-                                    force = profileContent == null,
-                                    userAgent = userAgent,
-                                    hwid = if (profileContent == null &&
-                                        (sourceUrl.startsWith("https://", ignoreCase = true) ||
-                                            sourceUrl.startsWith("http://", ignoreCase = true))
-                                    ) {
-                                        features.subscription.resolveSubscriptionHwid(hwid) {
-                                            data.AppSettingsPreferences(appContext).getOrCreateSubscriptionHwid()
-                                        }
-                                    } else "",
-                                    proxy = fetchOptions.toCoreFetchProxy(),
-                                ),
-                                reportStatus = { status -> statuses.trySend(status) },
-                            )
+                        val fetch = suspend {
+                            withMihomoAgeSecretKey(ageSecretKey) {
+                                Clash.fetchAndValid(
+                                    path = processingDir,
+                                    url = sourceUrl,
+                                    options = FetchOptions(
+                                        force = profileContent == null,
+                                        userAgent = userAgent,
+                                        hwid = if (profileContent == null &&
+                                            (sourceUrl.startsWith("https://", ignoreCase = true) ||
+                                                sourceUrl.startsWith("http://", ignoreCase = true))
+                                        ) {
+                                            features.subscription.resolveSubscriptionHwid(hwid) {
+                                                data.AppSettingsPreferences(appContext).getOrCreateSubscriptionHwid()
+                                            }
+                                        } else "",
+                                        proxy = fetchOptions.toCoreFetchProxy(),
+                                    ),
+                                    reportStatus = { status -> statuses.trySend(status) },
+                                )
+                            }
+                        }
+                        val timeoutMillis = fetchOptions.fetchTimeoutMillis()
+                        if (timeoutMillis == null) {
+                            fetch()
+                        } else {
+                            withTimeoutOrNull(timeoutMillis) { fetch() }
+                                ?: throw SubscriptionFetchTimeoutException(timeoutMillis)
                         }
                     } finally {
                         statuses.close()
@@ -117,7 +129,9 @@ internal class AndroidMihomoProfilePreparer(
                     processingDir.readPreparedProfileContent(ageSecretKey)
                 } ?: error("Configuration file is empty")
                 withContext(Dispatchers.IO) {
-                    copyProcessingProvidersBack(processingDir = processingDir, dataDir = dataDir)
+                    mihomoCorePublicationLock.withLock {
+                        copyProcessingProvidersBack(processingDir = processingDir, dataDir = dataDir)
+                    }
                 }
                 AndroidMihomoProfilePreparation.Success(
                     content = content,
@@ -177,3 +191,7 @@ private fun File.readPreparedProfileContent(ageSecretKey: String): String? {
 }
 
 private const val ProcessingDirPrefix = "mihomo-profile-processing"
+
+internal class SubscriptionFetchTimeoutException(timeoutMillis: Long) : RuntimeException(
+    "Subscription fetch timed out after ${timeoutMillis}ms because the proxy is not running",
+)

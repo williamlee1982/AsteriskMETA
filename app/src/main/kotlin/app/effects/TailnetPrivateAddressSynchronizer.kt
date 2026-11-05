@@ -83,6 +83,7 @@ private suspend fun applyPrivateAddressRestart(
             is ProxyServiceResult.Success -> runtime.copy(
                 appliedCidrs = restartState.privateAddressCidrs,
                 retryNotBeforeMillis = 0L,
+                runningSinceMillis = clock(),
             )
             is ProxyServiceResult.Failed -> {
                 AndroidAppLogger.warn(
