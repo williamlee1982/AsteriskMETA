@@ -8,13 +8,13 @@ import engine.root.daemon.AsteriskdClient
 import engine.root.daemon.config.AsteriskdOwner
 import engine.root.daemon.control.AsteriskdPhase
 import engine.root.runtime.boundSnapshot
-import features.subscription.runtime.mihomoCoreFetchLock
+import features.subscription.runtime.mihomoCorePublicationLock
 import kotlinx.coroutines.sync.withLock
 import system.AndroidRootShellGateway
 import system.ShellExecOptions
 
 /** Only called for a running ROOT API backend, never by bridge/VPN preparation. */
-internal suspend fun Context.publishRootProviderUpdates() = mihomoCoreFetchLock.withLock {
+internal suspend fun Context.publishRootProviderUpdates() = mihomoCorePublicationLock.withLock {
     val layout = rootRuntimeLayout()
     val shell = AndroidRootShellGateway()
     val snapshot = AsteriskdClient(shell).status(layout.asteriskdPath).boundSnapshot()

@@ -29,7 +29,7 @@ import engine.root.daemon.control.AsteriskdHelperType
 import engine.root.publication.rootRuntimeLayout
 import features.logs.AndroidAppLogger
 import features.logs.clearServiceLogRepositories
-import features.subscription.runtime.mihomoCoreFetchLock
+import features.subscription.runtime.mihomoCorePublicationLock
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.onEach
@@ -222,10 +222,10 @@ internal class RootSupervisorController(
                 throw launchFailure(preparationResult)
             }
             stage = "config_write"
-            RootPublicationWriter.write(runtimeLayout, root.mihomoProfileBytes, daemonConfigBytes)
-            runCatching { AndroidAppLogger.info(LogTag, "root_start trigger=${trigger.wire} stage=config_write result=ok") }
-            stage = "launch"
-            val launchResult = mihomoCoreFetchLock.withLock {
+            val launchResult = mihomoCorePublicationLock.withLock {
+                RootPublicationWriter.write(runtimeLayout, root.mihomoProfileBytes, daemonConfigBytes)
+                runCatching { AndroidAppLogger.info(LogTag, "root_start trigger=${trigger.wire} stage=config_write result=ok") }
+                stage = "launch"
                 shell.exec(
                     RootPublicationCommand.buildLaunch(publication),
                     ShellExecOptions(logFailure = false),

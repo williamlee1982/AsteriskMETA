@@ -38,7 +38,8 @@ internal class SubscriptionWorkerRunner(
         return if (
             result.failures.any { failure ->
                 failure.stage in RetryableNetworkStages &&
-                    isTransientSubscriptionFailure(failure.error)
+                    (isTransientSubscriptionFailure(failure.error) ||
+                        failure.error is SubscriptionFetchTimeoutException)
             }
         ) {
             SubscriptionWorkerResult.RETRY

@@ -41,12 +41,14 @@ internal class AndroidMihomoProviderFetcher(
             val dataDir = File(appContext.prepareMihomoResourceFilePaths().dataDir)
             val processingDir = File(appContext.cacheDir, "$ProcessingDirPrefix-${System.nanoTime()}")
             try {
-                val refreshedFiles = prepareProcessingProfileDir(
-                    processingDir = processingDir,
-                    dataDir = dataDir,
-                    profileContent = profileContent,
-                    refreshProxyProviders = true,
-                )
+                val refreshedFiles = mihomoCorePublicationLock.withLock {
+                    prepareProcessingProfileDir(
+                        processingDir = processingDir,
+                        dataDir = dataDir,
+                        profileContent = profileContent,
+                        refreshProxyProviders = true,
+                    )
+                }
                 if (refreshedFiles.isEmpty()) {
                     return@withContext MihomoProviderRefreshResult()
                 }
@@ -63,7 +65,9 @@ internal class AndroidMihomoProviderFetcher(
                 }.onFailure { error ->
                     if (error is CancellationException) throw error
                 }
-                copyProcessingProvidersBack(processingDir = processingDir, dataDir = dataDir)
+                mihomoCorePublicationLock.withLock {
+                    copyProcessingProvidersBack(processingDir = processingDir, dataDir = dataDir)
+                }
 
                 val successCount = refreshedFiles.count { file -> file.isFile && file.length() > 0L }
                 MihomoProviderRefreshResult(
@@ -147,5 +151,18 @@ internal fun copyProcessingProvidersBack(processingDir: File, dataDir: File) {
 private const val ProcessingDirPrefix = "mihomo-provider-processing"
 internal const val ProvidersDirName = "providers"
 internal const val ConfigFileName = "config.yaml"
+
+/**
+ * Serializes fetch work that reads and writes the shared core directory. A fetch may hold this
+ * lock across network I/O, so core publication must not use it.
+ */
 internal val mihomoCoreFetchLock = Mutex()
+
+/**
+ * Serializes only the local publication steps: copying fetched provider files back into the core
+ * directory, publishing providers to the ROOT runtime, and writing the config before a launch.
+ * A subscription or provider download holds this lock only while touching files, so a core
+ * launch never waits for the network.
+ */
+internal val mihomoCorePublicationLock = Mutex()
 private val ageSecretKeyLock = Mutex()
